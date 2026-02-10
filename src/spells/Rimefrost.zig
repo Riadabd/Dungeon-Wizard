@@ -90,9 +90,9 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             rimefrost.duration_secs,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .status = .cold });
-    tt.infos.appendAssumeCapacity(.{ .status = .shield });
-    tt.infos.appendAssumeCapacity(.{ .status = .frozen });
+    tt.pushInfo(.{ .status = .cold });
+    tt.pushInfo(.{ .status = .shield });
+    tt.pushInfo(.{ .status = .frozen });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

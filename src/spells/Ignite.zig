@@ -112,9 +112,9 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             StatusEffect.getDurationSeconds(.stunned, ignite.bonus_hit_effect.status_stacks.get(.stunned)).?,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .damage = .fire });
-    tt.infos.appendAssumeCapacity(.{ .status = .lit });
-    tt.infos.appendAssumeCapacity(.{ .status = .stunned });
+    tt.pushInfo(.{ .damage = .fire });
+    tt.pushInfo(.{ .status = .lit });
+    tt.pushInfo(.{ .status = .stunned });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

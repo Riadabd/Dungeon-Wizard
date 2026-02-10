@@ -68,7 +68,7 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             @floor(shield_fu.duration_secs),
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .status = .shield });
+    tt.pushInfo(.{ .status = .shield });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

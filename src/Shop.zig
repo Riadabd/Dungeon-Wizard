@@ -61,8 +61,10 @@ const ProductSlot = struct {
     long_hover: menuUI.LongHover = .{},
 };
 
-spells: std.BoundedArray(ProductSlot, max_num_spells) = .{},
-items: std.BoundedArray(ProductSlot, max_num_items) = .{},
+spells: [max_num_spells]ProductSlot = undefined,
+spells_len: usize = 0,
+items: [max_num_items]ProductSlot = undefined,
+items_len: usize = 0,
 card_remove_slot: ProductSlot = .{
     .product = .{
         .kind = .{ .card_remove = 0 },
@@ -80,11 +82,13 @@ pub fn init(seed: u64, run: *Run) Error!Shop {
     var ret = Shop{
         .rng = std.Random.DefaultPrng.init(seed),
     };
-    for (0..num_spells) |_| {
-        ret.spells.appendAssumeCapacity(.{});
+    ret.spells_len = num_spells;
+    for (0..num_spells) |i| {
+        ret.spells[i] = .{};
     }
-    for (0..num_items) |_| {
-        ret.items.appendAssumeCapacity(.{});
+    ret.items_len = num_items;
+    for (0..num_items) |i| {
+        ret.items[i] = .{};
     }
     ret.fillEmptySlots(run);
 
@@ -121,8 +125,8 @@ fn fillEmptySlots(self: *Shop, run: *Run) void {
     const rare_spells_generated = Spell.makeShopSpells(self.rng.random(), run.mode, &rarity_rare, spells_buf[nonrare_spells_generated.len .. nonrare_spells_generated.len + num_rare_spells]);
     const spells_generated = spells_buf[0 .. nonrare_spells_generated.len + rare_spells_generated.len];
     for (spells_generated, 0..) |spell, i| {
-        if (i >= self.spells.len) break;
-        const slot = &self.spells.buffer[i];
+        if (i >= self.spells_len) break;
+        const slot = &self.spells[i];
         if (slot.product != null) continue;
         slot.* = .{
             .product = .{
@@ -135,8 +139,8 @@ fn fillEmptySlots(self: *Shop, run: *Run) void {
     var items_buf: [max_num_items]Item = undefined;
     const items_generated = Item.makeShopItems(self.rng.random(), run.mode, items_buf[0..num_items]);
     for (items_generated, 0..) |item, i| {
-        if (i >= self.items.len) break;
-        const slot = &self.items.buffer[i];
+        if (i >= self.items_len) break;
+        const slot = &self.items[i];
         if (slot.product != null) continue;
         slot.* = .{
             .product = .{
@@ -237,7 +241,7 @@ pub fn update(self: *Shop, run: *Run) Error!?Product {
             run.deck_ui.close_btn_text = "Cancel";
             run.deck_ui.title_text = "Remove a Spell";
             _ = try shoppingUI(self, run, false);
-            if (try run.deckUI(run.deck.constSlice(), &run.deck_ui.hover, &run.deck_ui.scroll)) |interaction| {
+            if (try run.deckUI(run.deck.buffer[0..run.deck.len], &run.deck_ui.hover, &run.deck_ui.scroll)) |interaction| {
                 switch (interaction.state) {
                     .hovered => {},
                     .clicked => {
@@ -302,7 +306,7 @@ fn shoppingUI(self: *Shop, run: *Run, enabled: bool) Error!?Product {
     var spells_curr_pos = spells_topleft;
     var spells_col: usize = 0;
 
-    for (self.spells.slice()) |*slot| {
+    for (self.spells[0..self.spells_len]) |*slot| {
         slot.rect = .{
             .pos = spells_curr_pos,
             .dims = spell_slot_dims,
@@ -325,7 +329,7 @@ fn shoppingUI(self: *Shop, run: *Run, enabled: bool) Error!?Product {
     var items_curr_pos = items_topleft;
     var items_col: usize = 0;
 
-    for (self.items.slice()) |*slot| {
+    for (self.items[0..self.items_len]) |*slot| {
         slot.rect = .{
             .pos = items_curr_pos,
             .dims = item_slot_dims,
@@ -342,7 +346,7 @@ fn shoppingUI(self: *Shop, run: *Run, enabled: bool) Error!?Product {
 
     var emptied_slot = false;
 
-    for (self.spells.slice()) |*slot| {
+    for (self.spells[0..self.spells_len]) |*slot| {
         if (try unqProductSlot(&run.imm_ui.commands, &run.tooltip_ui.commands, slot, run, enabled)) {
             assert(canBuy(run, &slot.product.?));
             ret = slot.product.?;
@@ -351,7 +355,7 @@ fn shoppingUI(self: *Shop, run: *Run, enabled: bool) Error!?Product {
         }
     }
 
-    for (self.items.slice()) |*slot| {
+    for (self.items[0..self.items_len]) |*slot| {
         if (try unqProductSlot(&run.imm_ui.commands, &run.tooltip_ui.commands, slot, run, enabled)) {
             assert(canBuy(run, &slot.product.?));
             ret = slot.product.?;

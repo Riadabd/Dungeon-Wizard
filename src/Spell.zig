@@ -488,8 +488,16 @@ pub const Controller = struct {
 };
 
 pub const max_spells_in_array = 256;
-pub const SpellArray = std.BoundedArray(Spell, max_spells_in_array);
-const WeightsArray = std.BoundedArray(f32, max_spells_in_array);
+pub const SpellArray = struct {
+    buffer: [max_spells_in_array]Spell = undefined,
+    len: usize = 0,
+};
+
+pub fn spellArrayList(spells: *SpellArray) std.ArrayList(Spell) {
+    var list = std.ArrayList(Spell).initBuffer(spells.buffer[0..]);
+    list.items.len = spells.len;
+    return list;
+}
 pub const RarityWeights = std.EnumArray(Rarity, f32);
 pub const rarity_weight_offsets_base = RarityWeights.init(.{
     .pedestrian = 0.0,
@@ -498,12 +506,12 @@ pub const rarity_weight_offsets_base = RarityWeights.init(.{
     .brilliant = 0.0,
 });
 
-pub fn getSpellWeights(rarity_weights: RarityWeights, spells: []const Spell) WeightsArray {
-    var ret = WeightsArray{};
+pub fn getSpellWeights(rarity_weights: RarityWeights, spells: []const Spell, out_weights: []f32) []const f32 {
+    var ret = std.ArrayList(f32).initBuffer(out_weights);
     for (spells) |spell| {
-        ret.append(rarity_weights.get(spell.rarity)) catch unreachable;
+        ret.appendAssumeCapacity(rarity_weights.get(spell.rarity));
     }
-    return ret;
+    return ret.items;
 }
 
 pub fn makeRoomReward(rng: std.Random, mode: Run.Mode, rarity_weight_offsets: *RarityWeights, buf: []Spell) []Spell {
@@ -514,10 +522,11 @@ pub fn makeRoomReward(rng: std.Random, mode: Run.Mode, rarity_weight_offsets: *R
         .brilliant = 0.00,
     });
     var num: usize = 0;
-    var spell_pool = SpellArray{};
+    var spell_pool_buf: [max_spells_in_array]Spell = undefined;
+    var spell_pool = std.ArrayList(Spell).initBuffer(spell_pool_buf[0..]);
     for (all_spells) |spell| {
         if (spell.obtainable_modes.contains(mode) and spell.obtainableness.intersectWith(Obtainableness.Mask.initOne(.room_reward)).count() > 0) {
-            spell_pool.append(spell) catch unreachable;
+            spell_pool.appendBounded(spell) catch unreachable;
         }
     }
     var rarity_weights = rarity_weight_base;
@@ -526,7 +535,7 @@ pub fn makeRoomReward(rng: std.Random, mode: Run.Mode, rarity_weight_offsets: *R
     }
 
     for (0..buf.len) |i| {
-        if (spell_pool.len == 0) break;
+        if (spell_pool.items.len == 0) break;
         // fix up negative rare value
         var adjusted_weights = rarity_weights;
         {
@@ -535,8 +544,9 @@ pub fn makeRoomReward(rng: std.Random, mode: Run.Mode, rarity_weight_offsets: *R
                 adjusted_weights.set(.exceptional, 0);
             }
         }
-        const weights = getSpellWeights(adjusted_weights, spell_pool.constSlice());
-        const idx = rng.weightedIndex(f32, weights.constSlice());
+        var weights_buf: [max_spells_in_array]f32 = undefined;
+        const weights = getSpellWeights(adjusted_weights, spell_pool.items, weights_buf[0..spell_pool.items.len]);
+        const idx = rng.weightedIndex(f32, weights);
         // no duplicates! remove from pool
         const spell = spell_pool.swapRemove(idx);
         buf[i] = spell;
@@ -565,16 +575,18 @@ pub fn makeRoomReward(rng: std.Random, mode: Run.Mode, rarity_weight_offsets: *R
 
 pub fn makeShopSpells(rng: std.Random, mode: Run.Mode, rarity_weights: *const RarityWeights, buf: []Spell) []Spell {
     var num: usize = 0;
-    var spell_pool = SpellArray{};
+    var spell_pool_buf: [max_spells_in_array]Spell = undefined;
+    var spell_pool = std.ArrayList(Spell).initBuffer(spell_pool_buf[0..]);
     for (all_spells) |spell| {
         if (spell.obtainable_modes.contains(mode) and spell.obtainableness.intersectWith(Obtainableness.Mask.initOne(.shop)).count() > 0) {
-            spell_pool.append(spell) catch unreachable;
+            spell_pool.appendBounded(spell) catch unreachable;
         }
     }
     for (0..buf.len) |i| {
-        if (spell_pool.len == 0) break;
-        const weights = getSpellWeights(rarity_weights.*, spell_pool.constSlice());
-        const idx = rng.weightedIndex(f32, weights.constSlice());
+        if (spell_pool.items.len == 0) break;
+        var weights_buf: [max_spells_in_array]f32 = undefined;
+        const weights = getSpellWeights(rarity_weights.*, spell_pool.items, weights_buf[0..spell_pool.items.len]);
+        const idx = rng.weightedIndex(f32, weights);
         // no duplicates! remove from pool
         const spell = spell_pool.swapRemove(idx);
         buf[i] = spell;
@@ -635,7 +647,22 @@ pub const ManaCost = union(enum) {
 };
 
 pub const NewTag = struct {
-    pub const Array = std.BoundedArray(NewTag, 8);
+    pub const Array = struct {
+        buffer: [8]NewTag = undefined,
+        len: usize = 0,
+
+        pub fn fromSlice(items: []const NewTag) error{Overflow}!@This() {
+            if (items.len > 8) return error.Overflow;
+            var ret: @This() = .{};
+            @memcpy(ret.buffer[0..items.len], items);
+            ret.len = items.len;
+            return ret;
+        }
+
+        pub fn constSlice(self: *const @This()) []const NewTag {
+            return self.buffer[0..self.len];
+        }
+    };
     pub const CardLabel = utl.BoundedString(16);
 
     card_label: CardLabel = .{},

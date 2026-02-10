@@ -169,14 +169,57 @@ pub const ItemSlot = struct {
     toss_btn: TossBtn = .{},
 };
 
-pub fn getItemsRects() std.BoundedArray(geom.Rectf, max_item_slots) {
+const SpellSlotList = struct {
+    buffer: [max_spell_slots]SpellSlot = undefined,
+    len: usize = 0,
+
+    fn asList(self: *SpellSlotList) std.ArrayList(SpellSlot) {
+        var list = std.ArrayList(SpellSlot).initBuffer(self.buffer[0..]);
+        list.items.len = self.len;
+        return list;
+    }
+
+    pub fn appendAssumeCapacity(self: *SpellSlotList, item: SpellSlot) void {
+        var list = self.asList();
+        list.appendAssumeCapacity(item);
+        self.len = list.items.len;
+    }
+
+    pub fn slice(self: *SpellSlotList) []SpellSlot {
+        return self.buffer[0..self.len];
+    }
+};
+
+const ItemSlotList = struct {
+    buffer: [max_item_slots]ItemSlot = undefined,
+    len: usize = 0,
+
+    fn asList(self: *ItemSlotList) std.ArrayList(ItemSlot) {
+        var list = std.ArrayList(ItemSlot).initBuffer(self.buffer[0..]);
+        list.items.len = self.len;
+        return list;
+    }
+
+    pub fn appendAssumeCapacity(self: *ItemSlotList, item: ItemSlot) void {
+        var list = self.asList();
+        list.appendAssumeCapacity(item);
+        self.len = list.items.len;
+    }
+
+    pub fn slice(self: *ItemSlotList) []ItemSlot {
+        return self.buffer[0..self.len];
+    }
+};
+
+pub fn getItemsRects() [max_item_slots]geom.Rectf {
     const plat = getPlat();
     const ui_scaling = plat.ui_scaling;
     const item_slot_dims = v2f(24, 24).scale(ui_scaling);
     const item_slot_spacing: V2f = v2f(4, 10).scale(ui_scaling);
     const items_margin: V2f = v2f(12, 8).scale(ui_scaling);
 
-    var rects = std.BoundedArray(geom.Rectf, max_item_slots){};
+    var rects: [max_item_slots]geom.Rectf = undefined;
+    var rects_len: usize = 0;
     // items bottom left
     const max_items_rows: usize = 2;
     const max_items_per_row = max_item_slots / max_items_rows;
@@ -192,13 +235,15 @@ pub fn getItemsRects() std.BoundedArray(geom.Rectf, max_item_slots) {
         const y_off = (item_slot_dims.x + item_slot_spacing.y) * utl.as(f32, j);
         for (0..max_items_per_row) |i| {
             const x_off = (item_slot_dims.x + item_slot_spacing.x) * utl.as(f32, i);
-            rects.appendAssumeCapacity(.{
+            rects[rects_len] = .{
                 .pos = items_topleft.add(v2f(x_off, y_off)),
                 .dims = item_slot_dims,
-            });
+            };
+            rects_len += 1;
         }
     }
 
+    std.debug.assert(rects_len == max_item_slots);
     return rects;
 }
 
@@ -225,8 +270,8 @@ pub const Slots = struct {
     hp_rect: geom.Rectf = .{},
 
     // Actions
-    spells: std.BoundedArray(SpellSlot, max_spell_slots) = .{},
-    items: std.BoundedArray(ItemSlot, max_item_slots) = .{},
+    spells: SpellSlotList = .{},
+    items: ItemSlotList = .{},
     discard_slot: ?UISlot = null,
     debug_spell: SpellSlot = .{ .ui_slot = .{ .command = .{ .action = .{ .kind = .spell } } } },
 
@@ -300,7 +345,7 @@ pub const Slots = struct {
         const items_rects = getItemsRects();
         const rightmost_items_x = blk: {
             var best_x = -std.math.inf(f32);
-            for (items_rects.constSlice()) |rect| {
+            for (&items_rects) |rect| {
                 const x = rect.pos.x + rect.dims.x;
                 if (x > best_x) {
                     best_x = x;
@@ -310,7 +355,7 @@ pub const Slots = struct {
         };
         const items_width = rightmost_items_x + spell_item_margin;
         for (self.items.slice(), 0..) |*slot, i| {
-            slot.ui_slot.rect = items_rects.get(i);
+            slot.ui_slot.rect = items_rects[i];
             slot.ui_slot.key_rect_pos = slot.ui_slot.rect.pos.sub(V2f.splat(8).scale(ui_scaling));
             slot.toss_btn.rect.dims = V2f.splat(9).scale(ui_scaling);
             slot.toss_btn.rect.pos = slot.ui_slot.rect.pos.add(v2f(slot.ui_slot.rect.dims.x - slot.toss_btn.rect.dims.x, 0)).add(v2f(2, -4).scale(ui_scaling));
@@ -330,7 +375,7 @@ pub const Slots = struct {
         const mana_text_max_dims = plat.measureText(big_mana_txt, hp_mana_text_opt) catch v2f(font_sz_f, 70 * ui_scaling);
         const hp_dims = hp_text_max_dims.add(v2f(6 * ui_scaling, 0)).add(hp_mana_padding.scale(2));
         const mana_dims = mana_text_max_dims.add(v2f(6 * ui_scaling, 0)).add(hp_mana_padding.scale(2));
-        const mana_topleft = items_rects.get(0).pos.sub(v2f(0, hp_dims.y + 9 * ui_scaling));
+        const mana_topleft = items_rects[0].pos.sub(v2f(0, hp_dims.y + 9 * ui_scaling));
         const hp_topleft = mana_topleft.sub(v2f(0, hp_dims.y + 5 * ui_scaling));
         self.hp_rect = .{
             .pos = hp_topleft,

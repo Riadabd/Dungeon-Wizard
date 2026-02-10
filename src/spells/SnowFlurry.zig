@@ -128,9 +128,9 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             hit_dmg,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .damage = .ice });
-    tt.infos.appendAssumeCapacity(.{ .status = .cold });
-    tt.infos.appendAssumeCapacity(.{ .status = .frozen });
+    tt.pushInfo(.{ .damage = .ice });
+    tt.pushInfo(.{ .status = .cold });
+    tt.pushInfo(.{ .status = .frozen });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

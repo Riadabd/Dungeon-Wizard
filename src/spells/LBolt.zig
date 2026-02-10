@@ -113,7 +113,10 @@ pub const Projectile = struct {
                         renderer.points.buffer[renderer.points_start] = point;
                         renderer.points_start = (renderer.points_start + 1) % 10;
                     } else {
-                        renderer.points.appendAssumeCapacity(point);
+                        var points = std.ArrayList(V2f).initBuffer(renderer.points.buffer[0..]);
+                        points.items.len = renderer.points.len;
+                        points.appendAssumeCapacity(point);
+                        renderer.points.len = points.items.len;
                     }
                 }
                 const dist_from_origin = self.pos.dist(projectile.origin);
@@ -141,7 +144,10 @@ pub const Projectile = struct {
                 if (projectile.lightning_timer.tick(true)) {
                     if (renderer.points.len > 0) {
                         renderer.points_start = renderer.points_start % renderer.points.len;
-                        _ = renderer.points.orderedRemove(renderer.points_start);
+                        var points = std.ArrayList(V2f).initBuffer(renderer.points.buffer[0..]);
+                        points.items.len = renderer.points.len;
+                        _ = points.orderedRemove(renderer.points_start);
+                        renderer.points.len = points.items.len;
                     }
                 }
                 if (projectile.expire_timer.tick(false)) {
@@ -216,8 +222,8 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             hit_dmg,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .damage = .lightning });
-    tt.infos.appendAssumeCapacity(.{ .status = .stunned });
+    tt.pushInfo(.{ .damage = .lightning });
+    tt.pushInfo(.{ .status = .stunned });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

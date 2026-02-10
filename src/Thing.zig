@@ -38,6 +38,19 @@ const projectiles = @import("projectiles.zig");
 const sounds = @import("sounds.zig");
 const ImmUI = @import("ImmUI.zig");
 
+fn BufList(comptime T: type, comptime N: usize) type {
+    return struct {
+        buffer: [N]T = undefined,
+        len: usize = 0,
+    };
+}
+
+fn boundedList(comptime T: type, list_buf: anytype) std.ArrayList(T) {
+    var list = std.ArrayList(T).initBuffer(list_buf.buffer[0..]);
+    list.items.len = list_buf.len;
+    return list;
+}
+
 pub const Kind = enum {
     creature,
     projectile,
@@ -134,7 +147,7 @@ last_coll: ?Collision = null,
 //
 vision_range: f32 = 0,
 dbg: struct {
-    coords_searched: std.BoundedArray(V2i, 128) = .{},
+    coords_searched: BufList(V2i, 128) = .{},
     hitbox_active_timer: utl.TickCounter = utl.TickCounter.initStopped(60),
 } = .{},
 player_input: ?player.Input = null,
@@ -167,7 +180,7 @@ on_die: union(enum) {
         }
     },
 } = .default,
-path: std.BoundedArray(V2f, 32) = .{},
+path: BufList(V2f, 32) = .{},
 pathing_layer: TileMap.PathLayer = .normal,
 hitbox: ?HitBox = null,
 hurtbox: ?HurtBox = null,
@@ -252,8 +265,8 @@ pub const HP = struct {
     curr: f32 = 10,
     max: f32 = 10,
     total_damage_done: f32 = 0,
-    shields: std.BoundedArray(Shield, 8) = .{},
-    bubbles: std.BoundedArray(Bubble, 8) = .{},
+    shields: BufList(Shield, 8) = .{},
+    bubbles: BufList(Bubble, 8) = .{},
 
     pub const faction_colors = std.EnumArray(Faction, Colorf).init(.{
         .object = Colorf.gray,
@@ -276,7 +289,9 @@ pub const HP = struct {
             const shield = &self.shields.buffer[i];
             if (shield.timer) |*timer| {
                 if (timer.tick(false)) {
-                    _ = self.shields.orderedRemove(i);
+                    var shields = boundedList(Shield, &self.shields);
+                    _ = shields.orderedRemove(i);
+                    self.shields.len = shields.items.len;
                     continue;
                 }
             }
@@ -287,7 +302,9 @@ pub const HP = struct {
             const bubble = &self.bubbles.buffer[i];
             if (bubble.timer) |*timer| {
                 if (timer.tick(false)) {
-                    _ = self.bubbles.orderedRemove(i);
+                    var bubbles = boundedList(Bubble, &self.bubbles);
+                    _ = bubbles.orderedRemove(i);
+                    self.bubbles.len = bubbles.items.len;
                     continue;
                 }
             }
@@ -318,14 +335,20 @@ pub const HP = struct {
 
     pub fn addShield(self: *HP, amount: f32, ticks: ?i64) void {
         if (self.shields.len >= self.shields.buffer.len) {
-            _ = self.shields.orderedRemove(0);
+            var shields = boundedList(Shield, &self.shields);
+            _ = shields.orderedRemove(0);
+            self.shields.len = shields.items.len;
             Log.warn("Ran out of shields space!", .{});
         }
-        self.shields.append(.{
-            .curr = amount,
-            .max = amount,
-            .timer = if (ticks) |t| utl.TickCounter.init(t) else null,
-        }) catch unreachable;
+        {
+            var shields = boundedList(Shield, &self.shields);
+            shields.appendBounded(.{
+                .curr = amount,
+                .max = amount,
+                .timer = if (ticks) |t| utl.TickCounter.init(t) else null,
+            }) catch unreachable;
+            self.shields.len = shields.items.len;
+        }
     }
 
     pub fn doDamage(self: *HP, kind: Damage.Kind, amount: f32, thing: *Thing, room: *Room) void {
@@ -340,7 +363,9 @@ pub const HP = struct {
             last.curr -= dmg; // could go < 0
 
             if (last.curr <= 0) {
-                _ = self.shields.pop();
+                var shields = boundedList(Shield, &self.shields);
+                _ = shields.pop();
+                self.shields.len = shields.items.len;
             }
             // this shield blocked all the remaining damage; we're done
             if (damage_left <= 0) {
@@ -658,7 +683,9 @@ pub const HurtBox = struct {
             const hp = &(self.hp orelse break :damage_blk);
             // protec bubbles block entire effect
             if (effect.can_be_blocked and hp.bubbles.len > 0) {
-                _ = hp.bubbles.pop();
+                var bubbles = boundedList(HP.Bubble, &hp.bubbles);
+                _ = bubbles.pop();
+                hp.bubbles.len = bubbles.items.len;
                 return;
             }
             var damage = effect.damage;
@@ -1408,7 +1435,7 @@ pub const SpawnerController = struct {
 };
 
 pub const LightningRenderer = struct {
-    pub const PointArray = std.BoundedArray(V2f, 32);
+    pub const PointArray = BufList(V2f, 32);
     points: PointArray = .{},
     points_start: usize = 0,
     color: Colorf = .white,
@@ -1441,7 +1468,7 @@ pub const LightningRenderer = struct {
 };
 
 pub const ShapeRenderer = struct {
-    pub const PointArray = std.BoundedArray(V2f, 32);
+    pub const PointArray = BufList(V2f, 32);
     pub const TextLabel = utl.BoundedString(24);
 
     kind: union(enum) {
@@ -1601,7 +1628,7 @@ pub fn renderStatusBars(self: *const Thing, _: *const Room) Error!void {
             );
             var total_shield_amount: f32 = 0;
             var curr_shield_amount: f32 = 0;
-            for (hp.shields.constSlice()) |shield| {
+            for (hp.shields.buffer[0..hp.shields.len]) |shield| {
                 total_shield_amount += shield.max;
                 curr_shield_amount += shield.curr;
             }
@@ -1932,7 +1959,7 @@ pub fn renderOver(self: *const Thing, room: *const Room) Error!void {
     }
     if (debug.show_thing_coords_searched) {
         if (self.path.len > 0) {
-            for (self.dbg.coords_searched.constSlice()) |coord| {
+            for (self.dbg.coords_searched.buffer[0..self.dbg.coords_searched.len]) |coord| {
                 plat.circlef(TileMap.tileCoordToCenterPos(coord), 10, .{ .outline = .{ .color = Colorf.white }, .fill_color = null });
             }
         }
@@ -1960,7 +1987,7 @@ pub fn renderOver(self: *const Thing, room: *const Room) Error!void {
         if (std.meta.activeTag(self.controller) == .ai_actor) {
             const controller = self.controller.ai_actor;
             if (std.meta.activeTag(controller.decision) == .flee) {
-                for (controller.hiding_places.constSlice()) |h| {
+                for (controller.hiding_places_buf[0..controller.hiding_places_len]) |h| {
                     const self_to_pos = h.pos.sub(self.pos).normalizedOrZero();
                     const len = @max(controller.to_enemy.length() - controller.flee_range, 0);
                     const to_enemy_n = controller.to_enemy.setLengthOrZero(len);
@@ -2052,7 +2079,9 @@ pub fn renderOver(self: *const Thing, room: *const Room) Error!void {
 pub fn deferFree(self: *Thing, room: *Room) void {
     assert(self.spawn_state == .spawned);
     self.spawn_state = .freeable;
-    room.free_queue.append(self.id) catch @panic("out of free_queue space!");
+    var free_queue = boundedList(Id, &room.free_queue);
+    free_queue.appendBounded(self.id) catch @panic("out of free_queue space!");
+    room.free_queue.len = free_queue.items.len;
 }
 
 // copy retaining original id, alloc state and spawn_state
@@ -2137,9 +2166,13 @@ pub fn followPathGetNextPoint(self: *Thing, dist: f32) V2f {
         }
 
         if (remove_next) {
-            _ = self.path.orderedRemove(0);
+            var path = boundedList(V2f, &self.path);
+            _ = path.orderedRemove(0);
+            self.path.len = path.items.len;
             if (self.path.len == 1) {
-                _ = self.path.orderedRemove(0);
+                path = boundedList(V2f, &self.path);
+                _ = path.orderedRemove(0);
+                self.path.len = path.items.len;
                 ret = self.pos;
             }
         }
@@ -2162,8 +2195,10 @@ pub fn findPath(self: *Thing, room: *Room, goal: V2f) Error!void {
     );
     self.find_path_timer.restart();
     if (self.path.len == 0) {
-        self.path.append(self.pos) catch unreachable;
-        self.path.append(goal) catch unreachable;
+        var path = boundedList(V2f, &self.path);
+        path.appendBounded(self.pos) catch unreachable;
+        path.appendBounded(goal) catch unreachable;
+        self.path.len = path.items.len;
     }
 }
 

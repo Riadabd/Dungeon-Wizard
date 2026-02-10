@@ -116,7 +116,7 @@ pub const PotionInvis = struct {
             }),
         );
         tt.title = try Tooltip.Title.fromSlice(title);
-        tt.infos.appendAssumeCapacity(.{ .status = .unseeable });
+        tt.pushInfo(.{ .status = .unseeable });
     }
 };
 
@@ -156,7 +156,7 @@ pub const PotionThorns = struct {
             }),
         );
         tt.title = try Tooltip.Title.fromSlice(title);
-        tt.infos.appendAssumeCapacity(.{ .status = .prickly });
+        tt.pushInfo(.{ .status = .prickly });
     }
 };
 
@@ -331,8 +331,6 @@ pub const Controller = struct {
 };
 
 pub const max_items_in_array = 256;
-pub const ItemArray = std.BoundedArray(Item, max_items_in_array);
-const WeightsArray = std.BoundedArray(f32, max_items_in_array);
 
 const rarity_weight_base = std.EnumArray(Rarity, f32).init(.{
     .pedestrian = 0.5,
@@ -341,27 +339,29 @@ const rarity_weight_base = std.EnumArray(Rarity, f32).init(.{
     .brilliant = 0.05,
 });
 
-pub fn getItemWeights(items: []const Item) WeightsArray {
-    var ret = WeightsArray{};
+pub fn getItemWeights(items: []const Item, out_weights: []f32) []const f32 {
+    var ret = std.ArrayList(f32).initBuffer(out_weights);
     for (items) |item| {
-        ret.append(rarity_weight_base.get(item.rarity)) catch unreachable;
+        ret.appendAssumeCapacity(rarity_weight_base.get(item.rarity));
     }
-    return ret;
+    return ret.items;
 }
 
 pub fn generateRandom(rng: std.Random, mask: Obtainableness.Mask, mode: Run.Mode, allow_duplicates: bool, buf: []Item) []Item {
     var num: usize = 0;
-    var item_pool = ItemArray{};
+    var item_pool_buf: [max_items_in_array]Item = undefined;
+    var item_pool = std.ArrayList(Item).initBuffer(item_pool_buf[0..]);
     for (all_items) |item| {
         if (item.obtainable_modes.contains(mode) and item.obtainableness.intersectWith(mask).count() > 0) {
-            item_pool.append(item) catch unreachable;
+            item_pool.appendBounded(item) catch unreachable;
         }
     }
     for (0..buf.len) |i| {
-        if (item_pool.len == 0) break;
-        const weights = getItemWeights(item_pool.constSlice());
-        const idx = rng.weightedIndex(f32, weights.constSlice());
-        const item = if (allow_duplicates) item_pool.get(idx) else item_pool.swapRemove(idx);
+        if (item_pool.items.len == 0) break;
+        var weights_buf: [max_items_in_array]f32 = undefined;
+        const weights = getItemWeights(item_pool.items, weights_buf[0..item_pool.items.len]);
+        const idx = rng.weightedIndex(f32, weights);
+        const item = if (allow_duplicates) item_pool.items[idx] else item_pool.swapRemove(idx);
         buf[i] = item;
         num += 1;
     }

@@ -540,7 +540,8 @@ pub const ActorController = struct {
     flee_cooldown: utl.TickCounter = utl.TickCounter.initStopped(1 * core.fups_per_sec),
     flee_pos: ?V2f = null,
     // debug for flee
-    hiding_places: HidingPlacesArray = .{},
+    hiding_places_buf: [32]HidingPlace = undefined,
+    hiding_places_len: usize = 0,
     to_enemy: V2f = .{},
 
     pub fn update(self: *Thing, room: *Room) Error!void {
@@ -579,6 +580,7 @@ pub const ActorController = struct {
                         },
                         .flee => |flee| {
                             controller.flee_pos = null;
+                            controller.hiding_places_len = 0;
                             controller.non_action_decision_cooldown = utl.TickCounter.init(core.secsToTicks(flee.at_least_secs));
                         },
                         .action => {
@@ -654,7 +656,16 @@ pub const ActorController = struct {
                 const thing = _thing.?;
 
                 if (controller.flee_pos == null) {
-                    controller.flee_pos = try getFleePos(room, self.pos, thing.pos, flee.min_dist, flee.max_dist, self.pathing_layer);
+                    controller.flee_pos = try getFleePos(
+                        room,
+                        self.pos,
+                        thing.pos,
+                        flee.min_dist,
+                        flee.max_dist,
+                        self.pathing_layer,
+                        controller.hiding_places_buf[0..],
+                        &controller.hiding_places_len,
+                    );
                 }
                 if (controller.flee_pos) |pos| {
                     try self.findPath(room, pos);
@@ -677,27 +688,33 @@ pub const ActorController = struct {
     }
 };
 
-pub const HidingPlacesArray = std.BoundedArray(struct { pos: V2f, fleer_dist: f32, flee_from_dist: f32 }, 32);
-pub fn getHidingPlaces(room: *const Room, mask: TileMap.PathLayer.Mask, fleer_pos: V2f, flee_from_pos: V2f, min_flee_dist: f32, max_flee_dist: f32) Error!HidingPlacesArray {
+pub const HidingPlace = struct {
+    pos: V2f,
+    fleer_dist: f32,
+    flee_from_dist: f32,
+};
+
+pub fn getHidingPlaces(room: *const Room, mask: TileMap.PathLayer.Mask, fleer_pos: V2f, flee_from_pos: V2f, min_flee_dist: f32, max_flee_dist: f32, out_places: []HidingPlace) Error![]const HidingPlace {
     const plat = getPlat();
     const tilemap = &room.tilemap;
     const start_coord = TileMap.posToTileCoord(fleer_pos);
-    var places = HidingPlacesArray{};
-    var queue = std.BoundedArray(V2i, 128){};
+    var places = std.ArrayList(HidingPlace).initBuffer(out_places);
+    var queue_buf: [128]V2i = undefined;
+    var queue = std.ArrayList(V2i).initBuffer(queue_buf[0..]);
     var seen = std.AutoArrayHashMap(V2i, void).init(plat.heap);
     defer seen.deinit();
     try seen.put(start_coord, {});
-    queue.append(start_coord) catch unreachable;
+    queue.appendBounded(start_coord) catch unreachable;
 
-    while (queue.len > 0) {
+    while (queue.items.len > 0) {
         const curr = queue.orderedRemove(0);
         const pos = TileMap.tileCoordToCenterPos(curr);
         const flee_from_dist = pos.dist(flee_from_pos);
         const fleer_dist = pos.dist(fleer_pos);
         if (fleer_dist >= min_flee_dist and fleer_dist < max_flee_dist) {
-            places.append(.{ .pos = pos, .fleer_dist = fleer_dist, .flee_from_dist = flee_from_dist }) catch {};
+            places.appendBounded(.{ .pos = pos, .fleer_dist = fleer_dist, .flee_from_dist = flee_from_dist }) catch break;
         }
-        if (places.len >= places.buffer.len) break;
+        if (places.items.len >= places.capacity) break;
 
         for (TileMap.neighbor_dirs) |dir| {
             const dir_v = TileMap.neighbor_dirs_coords.get(dir);
@@ -708,13 +725,22 @@ pub fn getHidingPlaces(room: *const Room, mask: TileMap.PathLayer.Mask, fleer_po
             }
             if (seen.get(next)) |_| continue;
             try seen.put(next, {});
-            queue.append(next) catch break;
+            queue.appendBounded(next) catch break;
         }
     }
-    return places;
+    return places.items;
 }
 
-pub fn getFleePos(room: *const Room, fleer_pos: V2f, flee_from_pos: V2f, min_dist: f32, max_dist: f32, pathing_layer: TileMap.PathLayer) !?V2f {
+pub fn getFleePos(
+    room: *const Room,
+    fleer_pos: V2f,
+    flee_from_pos: V2f,
+    min_dist: f32,
+    max_dist: f32,
+    pathing_layer: TileMap.PathLayer,
+    hiding_places_out: []HidingPlace,
+    hiding_places_len: *usize,
+) !?V2f {
     const hiding_places = try getHidingPlaces(
         room,
         TileMap.PathLayer.Mask.initOne(pathing_layer),
@@ -722,7 +748,9 @@ pub fn getFleePos(room: *const Room, fleer_pos: V2f, flee_from_pos: V2f, min_dis
         flee_from_pos,
         min_dist,
         max_dist,
+        hiding_places_out,
     );
+    hiding_places_len.* = hiding_places.len;
     if (hiding_places.len == 0) return null;
     const to_enemy = flee_from_pos.sub(fleer_pos);
     var best_score: f32 = -std.math.inf(f32);

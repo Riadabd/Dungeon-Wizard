@@ -152,8 +152,8 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             hit_dmg,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .damage = .fire });
-    tt.infos.appendAssumeCapacity(.{ .status = .lit });
+    tt.pushInfo(.{ .damage = .fire });
+    tt.pushInfo(.{ .status = .lit });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

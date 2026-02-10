@@ -9,7 +9,7 @@ const raylib_config: []const u8 = "-DSUPPORT_CUSTOM_FRAME_CONTROL=1";
 fn linkOSStuff(b: *std.Build, target: std.Build.ResolvedTarget, artifact: *std.Build.Step.Compile, do_release: bool) void {
     switch (target.result.os.tag) {
         .macos => {
-            if (std.zig.system.darwin.getSdk(b.allocator, target.result)) |sdk| {
+            if (std.zig.system.darwin.getSdk(b.allocator, &target.result)) |sdk| {
                 artifact.addSystemFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "/System/Library/Frameworks" }) });
                 artifact.linkFramework("CoreFoundation");
                 artifact.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "/System/Library/Frameworks/CoreFoundation.framework/Versions/Current/Headers" }) });
@@ -65,7 +65,8 @@ pub fn linuxDisplayBackend(b: *std.Build) raylib_build.LinuxDisplayBackend {
 }
 
 pub fn buildDynamic(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, app_only: bool, do_release: bool) ![]*std.Build.Step.Compile {
-    var artifacts = std.ArrayList(*std.Build.Step.Compile).init(b.allocator);
+    var artifacts: std.ArrayList(*std.Build.Step.Compile) = .empty;
+    errdefer artifacts.deinit(b.allocator);
     std.debug.print(
         "Dynamic linking\noptimize: {any}\n{s}{s}",
         .{
@@ -78,19 +79,22 @@ pub fn buildDynamic(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const raylib_dep = b.dependency("raylib", .{
         .target = target,
         .optimize = optimize,
-        .shared = true,
+        .linkage = .dynamic,
         .config = raylib_config,
         .linux_display_backend = linuxDisplayBackend(b),
     });
     const raylib = raylib_dep.artifact("raylib");
 
-    const app_lib = b.addSharedLibrary(.{
+    const app_lib = b.addLibrary(.{
         .name = "game",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
-        .root_source_file = b.path("src/App.zig"),
-        .target = target,
-        .optimize = optimize,
+        .linkage = .dynamic,
+        .root_module = b.createModule(.{
+            // In this case the main source file is merely a path, however, in more
+            // complicated build scripts, this could be a generated file.
+            .root_source_file = b.path("src/App.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     app_lib.linkLibrary(raylib);
     app_lib.addIncludePath(b.path("raylib/src"));
@@ -99,9 +103,11 @@ pub fn buildDynamic(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     if (!app_only) {
         const exe = b.addExecutable(.{
             .name = title,
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
         });
         linkOSStuff(b, target, exe, do_release);
         exe.linkLibrary(raylib);
@@ -133,12 +139,12 @@ pub fn buildDynamic(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
             const run_step = b.step("run", "Run the app");
             run_step.dependOn(&run_cmd.step);
         }
-        try artifacts.append(exe);
+        try artifacts.append(b.allocator, exe);
     }
-    try artifacts.append(app_lib);
-    try artifacts.append(raylib);
+    try artifacts.append(b.allocator, app_lib);
+    try artifacts.append(b.allocator, raylib);
 
-    return try artifacts.toOwnedSlice();
+    return try artifacts.toOwnedSlice(b.allocator);
 }
 
 pub fn buildStatic(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, do_release: bool) ![]*std.Build.Step.Compile {
@@ -147,16 +153,18 @@ pub fn buildStatic(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
     const raylib_dep = b.dependency("raylib", .{
         .target = target,
         .optimize = optimize,
-        .shared = false,
+        .linkage = .static,
         .config = raylib_config,
         .linux_display_backend = linuxDisplayBackend(b),
     });
     const raylib = raylib_dep.artifact("raylib");
     const exe = b.addExecutable(.{
         .name = title,
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     linkOSStuff(b, target, exe, do_release);
     exe.linkLibrary(raylib);
@@ -174,10 +182,11 @@ pub fn buildStatic(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
         run_step.dependOn(&run_cmd.step);
     }
 
-    var artifacts = std.ArrayList(*std.Build.Step.Compile).init(b.allocator);
-    try artifacts.append(exe);
+    var artifacts: std.ArrayList(*std.Build.Step.Compile) = .empty;
+    errdefer artifacts.deinit(b.allocator);
+    try artifacts.append(b.allocator, exe);
 
-    return try artifacts.toOwnedSlice();
+    return try artifacts.toOwnedSlice(b.allocator);
 }
 
 // Although this function looks imperative, note that its job is to
@@ -259,9 +268,11 @@ pub fn build(b: *std.Build) !void {
         // testsu
         if (target.query.isNative()) {
             const geometry_unit_tests = b.addTest(.{
-                .root_source_file = b.path("src/geometry.zig"),
-                .target = target,
-                .optimize = optimize,
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path("src/geometry.zig"),
+                    .target = target,
+                    .optimize = optimize,
+                }),
             });
 
             const run_geometry_unit_tests = b.addRunArtifact(geometry_unit_tests);

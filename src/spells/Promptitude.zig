@@ -73,7 +73,7 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             @floor(StatusEffect.getDurationSeconds(.promptitude, promptitude.num_stacks).?),
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .status = .promptitude });
+    tt.pushInfo(.{ .status = .promptitude });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

@@ -28,6 +28,64 @@ const creatures = @import("creatures.zig");
 const icon_text = @import("icon_text.zig");
 const Data = @This();
 
+fn BufList(comptime T: type, comptime N: usize) type {
+    return struct {
+        buffer: [N]T = undefined,
+        len: usize = 0,
+
+        const Self = @This();
+
+        fn asList(self: *Self) std.ArrayList(T) {
+            var list = std.ArrayList(T).initBuffer(self.buffer[0..]);
+            list.items.len = self.len;
+            return list;
+        }
+
+        pub fn clear(self: *Self) void {
+            self.len = 0;
+        }
+
+        pub fn append(self: *Self, item: T) error{Overflow}!void {
+            var list = self.asList();
+            list.appendBounded(item) catch return error.Overflow;
+            self.len = list.items.len;
+        }
+
+        pub fn appendAssumeCapacity(self: *Self, item: T) void {
+            var list = self.asList();
+            list.appendAssumeCapacity(item);
+            self.len = list.items.len;
+        }
+
+        pub fn resize(self: *Self, new_len: usize) error{Overflow}!void {
+            if (new_len > N) return error.Overflow;
+            self.len = new_len;
+        }
+
+        pub fn addOne(self: *Self) error{Overflow}!*T {
+            if (self.len >= N) return error.Overflow;
+            self.len += 1;
+            return &self.buffer[self.len - 1];
+        }
+
+        pub fn get(self: *const Self, idx: usize) T {
+            return self.buffer[idx];
+        }
+
+        pub fn getPtr(self: *Self, idx: usize) *T {
+            return &self.buffer[idx];
+        }
+
+        pub fn slice(self: *Self) []T {
+            return self.buffer[0..self.len];
+        }
+
+        pub fn constSlice(self: *const Self) []const T {
+            return self.buffer[0..self.len];
+        }
+    };
+}
+
 // asset classes
 // files:
 // - images -> spritesheets
@@ -176,7 +234,7 @@ pub fn getDefault(data: *Data, AssetType: type) ?*AssetType {
 }
 
 pub fn AssetArray(AssetType: type, max_num: usize) type {
-    return std.BoundedArray(AssetType, max_num);
+    return BufList(AssetType, max_num);
 }
 
 pub fn allocAsset(data: *Data, AssetType: type, name: []const u8) *AssetType {
@@ -266,7 +324,7 @@ pub const TileSet = struct {
     texture: Platform.Texture2D = undefined,
     tile_dims: V2i = .{},
     sheet_dims: V2i = .{},
-    tiles: std.BoundedArray(TileProperties, TileMap.max_map_tiles) = .{},
+    tiles: BufList(TileProperties, TileMap.max_map_tiles) = .{},
 
     pub fn deinit(self: *TileSet) void {
         const plat = App.getPlat();
@@ -384,10 +442,10 @@ pub fn EnumToBoundedStringArrayType(E: type) type {
 
 pub fn enumToBoundedStringArray(E: type) EnumToBoundedStringArrayType(E) {
     var ret = EnumToBoundedStringArrayType(E).initUndefined();
-    const BoundedArrayType = @TypeOf(ret).Value;
+    const ArrayValueType = @TypeOf(ret).Value;
     const info = @typeInfo(E);
     for (info.@"enum".fields) |f| {
-        ret.set(@enumFromInt(f.value), BoundedArrayType.init(f.name));
+        ret.set(@enumFromInt(f.value), ArrayValueType.init(f.name));
     }
     return ret;
 }
@@ -484,7 +542,7 @@ pub const MiscIcon = enum {
     card_remove,
 };
 
-pub const TileMapIdxBuf = std.BoundedArray(usize, 16);
+pub const TileMapIdxBuf = BufList(usize, 16);
 
 pub const Shader = struct {
     data_ref: Ref(Shader) = .{},
@@ -1170,12 +1228,15 @@ pub fn reloadSpriteAnims(self: *Data) Error!void {
                 inline for (event_info.@"enum".fields) |f| {
                     if (std.mem.eql(u8, m_name, f.name)) {
                         //std.debug.print("Adding event '{s}' on frame {}\n", .{ f.name, m.data.int });
-                        anim.events.append(.{
+                        var events = std.ArrayList(sprites.AnimEvent).initBuffer(anim.events_buf[0..]);
+                        events.items.len = anim.events_len;
+                        events.appendBounded(.{
                             .frame = u.as(i32, m.data.int),
                             .kind = @enumFromInt(f.value),
                         }) catch {
                             Log.err("Skipped adding anim event \"{s}\"; buffer full", .{f.name});
                         };
+                        anim.events_len = events.items.len;
                         continue :meta_blk;
                     }
                 }

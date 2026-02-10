@@ -64,7 +64,7 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             StatusEffect.getIcon(.trailblaze),
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .status = .trailblaze });
+    tt.pushInfo(.{ .status = .trailblaze });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

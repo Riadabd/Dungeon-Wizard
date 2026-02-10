@@ -20,6 +20,65 @@ const Log = App.Log;
 const getPlat = App.getPlat;
 const Thing = @import("Thing.zig");
 const Room = @import("Room.zig");
+
+fn BufList(comptime T: type, comptime N: usize) type {
+    return struct {
+        buffer: [N]T = undefined,
+        len: usize = 0,
+
+        const Self = @This();
+
+        fn asList(self: *Self) std.ArrayList(T) {
+            var list = std.ArrayList(T).initBuffer(self.buffer[0..]);
+            list.items.len = self.len;
+            return list;
+        }
+
+        pub fn clear(self: *Self) void {
+            self.len = 0;
+        }
+
+        pub fn append(self: *Self, item: T) error{Overflow}!void {
+            var list = self.asList();
+            list.appendBounded(item) catch return error.Overflow;
+            self.len = list.items.len;
+        }
+
+        pub fn appendAssumeCapacity(self: *Self, item: T) void {
+            var list = self.asList();
+            list.appendAssumeCapacity(item);
+            self.len = list.items.len;
+        }
+
+        pub fn resize(self: *Self, new_len: usize) error{Overflow}!void {
+            if (new_len > N) return error.Overflow;
+            self.len = new_len;
+        }
+
+        pub fn orderedRemove(self: *Self, idx: usize) T {
+            var list = self.asList();
+            const ret = list.orderedRemove(idx);
+            self.len = list.items.len;
+            return ret;
+        }
+
+        pub fn get(self: *const Self, idx: usize) T {
+            return self.buffer[idx];
+        }
+
+        pub fn getPtr(self: *Self, idx: usize) *T {
+            return &self.buffer[idx];
+        }
+
+        pub fn slice(self: *Self) []T {
+            return self.buffer[0..self.len];
+        }
+
+        pub fn constSlice(self: *const Self) []const T {
+            return self.buffer[0..self.len];
+        }
+    };
+}
 const Data = @import("Data.zig");
 const sprites = @import("sprites.zig");
 const TileMap = @This();
@@ -109,7 +168,7 @@ pub const TileLayer = struct {
         idx: u32 = undefined,
     };
     above_objects: bool = false,
-    tiles: std.BoundedArray(TileLayer.Tile, max_map_tiles) = .{},
+    tiles: BufList(TileLayer.Tile, max_map_tiles) = .{},
 };
 pub const TileSetRef = struct {
     ref: Data.Ref(Data.TileSet),
@@ -119,13 +178,13 @@ pub const TileSetRef = struct {
 data_ref: Data.Ref(TileMap) = .{},
 
 kind: Data.RoomKind = .testu,
-game_tiles: std.BoundedArray(GameTile, max_map_tiles) = .{},
-tile_layers: std.BoundedArray(TileLayer, max_map_layers) = .{},
-tilesets: std.BoundedArray(TileSetRef, max_map_tilesets) = .{},
-creatures: std.BoundedArray(struct { kind: Thing.CreatureKind, pos: V2f }, max_map_creatures) = .{},
-exits: std.BoundedArray(ExitDoor, max_map_exits) = .{},
+game_tiles: BufList(GameTile, max_map_tiles) = .{},
+tile_layers: BufList(TileLayer, max_map_layers) = .{},
+tilesets: BufList(TileSetRef, max_map_tilesets) = .{},
+creatures: BufList(struct { kind: Thing.CreatureKind, pos: V2f }, max_map_creatures) = .{},
+exits: BufList(ExitDoor, max_map_exits) = .{},
 shop: ?Shop = null,
-wave_spawns: std.BoundedArray(SpawnPos, max_map_spawns) = .{},
+wave_spawns: BufList(SpawnPos, max_map_spawns) = .{},
 dims_tiles: V2i = .{},
 dims_game: V2i = .{},
 rect_dims: V2f = .{},
@@ -226,7 +285,7 @@ pub fn getTileNeighborsPassable(self: *const TileMap, mask: Thing.Collision.Mask
     return ret;
 }
 
-pub fn __unused__findPathAStar(self: *const TileMap, allocator: std.mem.Allocator, start: V2f, goal: V2f) Error!std.BoundedArray(V2f, 32) {
+pub fn __unused__findPathAStar(self: *const TileMap, allocator: std.mem.Allocator, start: V2f, goal: V2f) Error!BufList(V2f, 32) {
     const AStar = struct {
         const PqEl = struct {
             p: V2i,
@@ -319,7 +378,7 @@ pub fn __unused__findPathAStar(self: *const TileMap, allocator: std.mem.Allocato
     }
     std.mem.reverse(V2f, path_arr.items);
 
-    var ret = std.BoundedArray(V2f, 32){};
+    var ret = BufList(V2f, 32){};
     const ret_path_len = @min(ret.buffer.len, path_arr.items.len);
 
     for (0..ret_path_len) |i| {
@@ -533,7 +592,7 @@ pub inline fn isStraightPathBetween(self: *const TileMap, _a: V2f, _b: V2f, radi
     return self.raycastBothThicc(_a, _b, radius * 2, mask, null);
 }
 
-pub fn findPathThetaStar(self: *const TileMap, allocator: std.mem.Allocator, layer: PathLayer, start: V2f, desired_goal: V2f, radius: f32, coords_searched: *std.BoundedArray(V2i, 128)) Error!std.BoundedArray(V2f, 32) {
+pub fn findPathThetaStar(self: *const TileMap, allocator: std.mem.Allocator, layer: PathLayer, start: V2f, desired_goal: V2f, radius: f32, coords_searched: *BufList(V2i, 128)) Error!BufList(V2f, 32) {
     const ThetaStar = struct {
         const PqEl = struct {
             p: V2i,
@@ -554,7 +613,7 @@ pub fn findPathThetaStar(self: *const TileMap, allocator: std.mem.Allocator, lay
     const start_coord = posToTileCoord(start);
     var actual_goal = desired_goal;
     var goal_coord = posToTileCoord(actual_goal);
-    var ret = std.BoundedArray(V2f, 32){};
+    var ret = BufList(V2f, 32){};
 
     if (self.gameTileCoordToConstGameTile(goal_coord)) |goal_tile| {
         if (self.gameTileCoordToConstGameTile(start_coord)) |start_tile| {

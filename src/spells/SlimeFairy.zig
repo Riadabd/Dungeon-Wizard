@@ -84,8 +84,8 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             Spell.Keyword.mislay,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .creature = .@"fairy-green" });
-    tt.infos.appendAssumeCapacity(.{ .keyword = .mislay });
+    tt.pushInfo(.{ .creature = .@"fairy-green" });
+    tt.pushInfo(.{ .keyword = .mislay });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

@@ -104,7 +104,40 @@ pub const Command = union(enum) {
     },
 };
 
-pub const CmdBuf = std.BoundedArray(Command, 512);
+pub const CmdBuf = struct {
+    buffer: [512]Command = undefined,
+    len: usize = 0,
+
+    fn asList(self: *CmdBuf) std.ArrayList(Command) {
+        var list = std.ArrayList(Command).initBuffer(self.buffer[0..]);
+        list.items.len = self.len;
+        return list;
+    }
+
+    pub fn clear(self: *CmdBuf) void {
+        self.len = 0;
+    }
+
+    pub fn append(self: *CmdBuf, item: Command) error{Overflow}!void {
+        var list = self.asList();
+        list.appendBounded(item) catch return error.Overflow;
+        self.len = list.items.len;
+    }
+
+    pub fn appendAssumeCapacity(self: *CmdBuf, item: Command) void {
+        var list = self.asList();
+        list.appendAssumeCapacity(item);
+        self.len = list.items.len;
+    }
+
+    pub fn slice(self: *CmdBuf) []Command {
+        return self.buffer[0..self.len];
+    }
+
+    pub fn constSlice(self: *const CmdBuf) []const Command {
+        return self.buffer[0..self.len];
+    }
+};
 
 pub fn render(cmd_buf: *const CmdBuf) Error!void {
     const SortZ = struct {

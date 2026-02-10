@@ -35,6 +35,12 @@ const Tooltip = @import("Tooltip.zig");
 const TileMap = @import("TileMap.zig");
 const icon_text = @import("icon_text.zig");
 
+fn boundedList(comptime T: type, list_buf: anytype) std.ArrayList(T) {
+    var list = std.ArrayList(T).initBuffer(list_buf.buffer[0..]);
+    list.items.len = list_buf.len;
+    return list;
+}
+
 pub const Mode = enum {
     pub const Mask = std.EnumSet(Mode);
 
@@ -52,14 +58,21 @@ pub const Reward = struct {
     const max_items = 8;
 
     pub const UI = struct {
-        rewards: std.BoundedArray(Reward, max_rewards) = .{},
+        rewards: RewardArray = .{},
         selected_spell_choice_idx: ?usize = null,
+    };
+    const RewardArray = struct {
+        buffer: [max_rewards]Reward = undefined,
+        len: usize = 0,
     };
     pub const SpellChoice = struct {
         spell: Spell,
         long_hover: menuUI.LongHover = .{},
     };
-    pub const SpellChoiceArray = std.BoundedArray(SpellChoice, max_spells);
+    pub const SpellChoiceArray = struct {
+        buffer: [max_spells]SpellChoice = undefined,
+        len: usize = 0,
+    };
 
     kind: union(enum) {
         spell_choice: SpellChoiceArray,
@@ -91,7 +104,9 @@ pub fn makeStarterDeck() Spell.SpellArray {
 
     deck: for (deck_cards) |t| {
         for (0..t[1]) |_| {
-            ret.append(t[0]) catch break :deck;
+            var ret_list = Spell.spellArrayList(&ret);
+            ret_list.appendBounded(t[0]) catch break :deck;
+            ret.len = ret_list.items.len;
         }
     }
 
@@ -106,7 +121,10 @@ pub const RoomLoadParams = struct {
 };
 
 pub const Place = struct {
-    pub const Array = std.BoundedArray(Place, 32);
+    pub const Array = struct {
+        buffer: [32]Place = undefined,
+        len: usize = 0,
+    };
     room: RoomLoadParams,
 };
 
@@ -201,37 +219,43 @@ pub fn initSeeded(run: *Run, mode: Mode, seed: u64) Error!*Run {
     // init places
     var places = Place.Array{};
 
-    var smol_room_idxs = std.BoundedArray(usize, 16){};
+    var smol_room_idxs_buf: [16]usize = undefined;
+    var smol_room_idxs = std.ArrayList(usize).initBuffer(smol_room_idxs_buf[0..]);
     for (0..app.data.room_kind_tilemaps.get(.smol).len) |i| {
-        smol_room_idxs.append(i) catch unreachable;
+        smol_room_idxs.appendBounded(i) catch unreachable;
     }
-    run.rng.random().shuffleWithIndex(usize, smol_room_idxs.slice(), u32);
+    run.rng.random().shuffleWithIndex(usize, smol_room_idxs.items, u32);
 
-    for (0..@min(smol_room_idxs.len, 4)) |i| {
-        try places.append(.{ .room = .{
+    for (0..@min(smol_room_idxs.items.len, 4)) |i| {
+        var places_list = boundedList(Place, &places);
+        try places_list.appendBounded(.{ .room = .{
             .difficulty_per_wave = 0,
             .kind = .smol,
-            .idx = smol_room_idxs.get(i),
+            .idx = smol_room_idxs.items[i],
             .waves_params = .{ .room_kind = .smol },
         } });
+        places.len = places_list.items.len;
     }
 
-    var big_room_idxs = std.BoundedArray(usize, 16){};
+    var big_room_idxs_buf: [16]usize = undefined;
+    var big_room_idxs = std.ArrayList(usize).initBuffer(big_room_idxs_buf[0..]);
     for (0..app.data.room_kind_tilemaps.get(.big).len) |i| {
-        big_room_idxs.append(i) catch unreachable;
+        big_room_idxs.appendBounded(i) catch unreachable;
     }
-    run.rng.random().shuffleWithIndex(usize, big_room_idxs.slice(), u32);
+    run.rng.random().shuffleWithIndex(usize, big_room_idxs.items, u32);
 
-    for (0..@min(big_room_idxs.len, 4)) |i| {
-        try places.append(.{ .room = .{
+    for (0..@min(big_room_idxs.items.len, 4)) |i| {
+        var places_list = boundedList(Place, &places);
+        try places_list.appendBounded(.{ .room = .{
             .difficulty_per_wave = 0,
             .kind = .big,
-            .idx = big_room_idxs.get(i),
+            .idx = big_room_idxs.items[i],
             .waves_params = .{ .room_kind = .big },
         } });
+        places.len = places_list.items.len;
     }
 
-    for (places.slice(), 0..) |*place, i| {
+    for (places.buffer[0..places.len], 0..) |*place, i| {
         // TODO this better
 
         if (i < 4) { // pre shop
@@ -261,15 +285,31 @@ pub fn initSeeded(run: *Run, mode: Mode, seed: u64) Error!*Run {
         place.room.waves_params.difficulty_per_wave = place.room.difficulty_per_wave;
     }
     //shop in middle
-    try places.insert(places.len / 2, .{ .room = .{ .kind = .shop, .waves_params = .{ .room_kind = .shop, .first_wave_delay_secs = 0 } } });
+    {
+        var places_list = boundedList(Place, &places);
+        try places_list.insertBounded(places.len / 2, .{ .room = .{ .kind = .shop, .waves_params = .{ .room_kind = .shop, .first_wave_delay_secs = 0 } } });
+        places.len = places_list.items.len;
+    }
     //shop at end
-    try places.append(.{ .room = .{ .kind = .shop, .waves_params = .{ .room_kind = .shop, .first_wave_delay_secs = 0 } } });
+    {
+        var places_list = boundedList(Place, &places);
+        try places_list.appendBounded(.{ .room = .{ .kind = .shop, .waves_params = .{ .room_kind = .shop, .first_wave_delay_secs = 0 } } });
+        places.len = places_list.items.len;
+    }
     // first room (dummy room)
-    try places.insert(0, .{ .room = .{ .kind = .first, .waves_params = .{ .room_kind = .first, .first_wave_delay_secs = 0 } } });
+    {
+        var places_list = boundedList(Place, &places);
+        try places_list.insertBounded(0, .{ .room = .{ .kind = .first, .waves_params = .{ .room_kind = .first, .first_wave_delay_secs = 0 } } });
+        places.len = places_list.items.len;
+    }
     // debug: shop at very start
     //try places.insert(0, .{ .room = .{ .kind = .shop, .waves_params = .{ .room_kind = .shop, .first_wave_delay_secs = 0 } } });
     // boss
-    try places.append(.{ .room = .{ .difficulty_per_wave = 5, .kind = .boss, .idx = 0, .waves_params = .{ .room_kind = .boss } } });
+    {
+        var places_list = boundedList(Place, &places);
+        try places_list.appendBounded(.{ .room = .{ .difficulty_per_wave = 5, .kind = .boss, .idx = 0, .waves_params = .{ .room_kind = .boss } } });
+        places.len = places_list.items.len;
+    }
     // TODO this better
     {
         const boss_params = &places.buffer[places.len - 1].room.waves_params;
@@ -352,7 +392,7 @@ pub fn loadPlaceFromCurrIdx(self: *Run) Error!void {
         shop.deinit();
         self.shop = null;
     }
-    const r = self.places.get(self.curr_place_idx).room;
+    const r = self.places.buffer[self.curr_place_idx].room;
     Log.debug("Load room {}: {any}", .{ self.curr_place_idx, r.kind });
     var player_thing = player.modePrototype(self.mode);
     if (self.room.getConstPlayer()) |p| {
@@ -392,9 +432,13 @@ pub fn makeRewards(self: *Run, difficulty: f32) void {
         var buf: [Reward.max_spells]Spell = undefined;
         const spells = Spell.makeRoomReward(random, self.mode, &self.spell_rarity_weight_offsets, buf[0..num_spells]);
         for (spells) |spell| {
-            reward.kind.spell_choice.appendAssumeCapacity(.{ .spell = spell });
+            var spell_choices = boundedList(Reward.SpellChoice, &reward.kind.spell_choice);
+            spell_choices.appendAssumeCapacity(.{ .spell = spell });
+            reward.kind.spell_choice.len = spell_choices.items.len;
         }
-        reward_ui.rewards.appendAssumeCapacity(reward);
+        var rewards = boundedList(Reward, &reward_ui.rewards);
+        rewards.appendAssumeCapacity(reward);
+        reward_ui.rewards.len = rewards.items.len;
     }
     { // items
         const num_items = random.uintAtMost(usize, Reward.base_items);
@@ -402,14 +446,18 @@ pub fn makeRewards(self: *Run, difficulty: f32) void {
             var buf: [Reward.max_items]Item = undefined;
             const items = Item.makeRoomReward(random, self.mode, buf[0..num_items]);
             for (items) |item| {
-                reward_ui.rewards.appendAssumeCapacity(.{ .kind = .{ .item = item } });
+                var rewards = boundedList(Reward, &reward_ui.rewards);
+                rewards.appendAssumeCapacity(.{ .kind = .{ .item = item } });
+                reward_ui.rewards.len = rewards.items.len;
             }
         }
     }
     { // gold
         const gold = u.as(i32, @ceil(difficulty)) + self.rng.random().intRangeAtMost(u8, 6, 8);
         if (gold > 0) { // should be above 0 but ya never know
-            reward_ui.rewards.appendAssumeCapacity(.{ .kind = .{ .gold = gold } });
+            var rewards = boundedList(Reward, &reward_ui.rewards);
+            rewards.appendAssumeCapacity(.{ .kind = .{ .gold = gold } });
+            reward_ui.rewards.len = rewards.items.len;
         }
     }
 
@@ -436,17 +484,31 @@ pub fn pickupProduct(self: *Run, product: *const Shop.Product) void {
     switch (product.kind) {
         .spell => |spell| {
             assert(self.deck.len < self.deck.buffer.len);
-            self.deck.append(spell) catch unreachable;
+            {
+                var deck = Spell.spellArrayList(&self.deck);
+                deck.appendBounded(spell) catch unreachable;
+                self.deck.len = deck.items.len;
+            }
             // TODO ugh?
-            self.room.init_params.deck.append(spell) catch unreachable;
-            self.room.draw_pile.append(spell) catch unreachable;
+            {
+                var init_deck = Spell.spellArrayList(&self.room.init_params.deck);
+                init_deck.appendBounded(spell) catch unreachable;
+                self.room.init_params.deck.len = init_deck.items.len;
+            }
+            {
+                var draw_pile = Spell.spellArrayList(&self.room.draw_pile);
+                draw_pile.appendBounded(spell) catch unreachable;
+                self.room.draw_pile.len = draw_pile.items.len;
+            }
         },
         .item => |item| {
             const slot = self.ui_slots.getNextEmptyItemSlot().?;
             slot.item = item;
         },
         .card_remove => |idx| {
-            _ = self.deck.orderedRemove(idx);
+            var deck = Spell.spellArrayList(&self.deck);
+            _ = deck.orderedRemove(idx);
+            self.deck.len = deck.items.len;
         },
     }
 }
@@ -472,7 +534,7 @@ pub fn roomUpdate(self: *Run) Error!void {
     if (debug.enable_debug_controls) {
         if (plat.input_buffer.keyIsJustPressed(.f4)) {
             try room.reset();
-            const r = self.places.get(self.curr_place_idx).room;
+            const r = self.places.buffer[self.curr_place_idx].room;
             self.ui_slots.beginRoom(&self.room, r.kind != .shop);
         }
         if (room.edit_mode) {
@@ -772,19 +834,21 @@ pub fn rewardSpellChoiceUI(self: *Run, idx: usize) Error!void {
     var spell_choices: *Reward.SpellChoiceArray = &self.reward_ui.?.rewards.buffer[idx].kind.spell_choice;
     assert(spell_choices.len > 0);
     const spell_dims = Spell.card_dims.scale(ui_scaling + 1);
-    var spell_rects = std.BoundedArray(geom.Rectf, Reward.max_spells){};
-    spell_rects.resize(spell_choices.len) catch unreachable;
+    var spell_rects_buf: [Reward.max_spells]geom.Rectf = undefined;
+    var spell_rects = std.ArrayList(geom.Rectf).initBuffer(spell_rects_buf[0..]);
+    std.debug.assert(spell_choices.len <= spell_rects.capacity);
+    spell_rects.items.len = spell_choices.len;
     gameUI.layoutRectsFixedSize(
-        spell_rects.len,
+        spell_rects.items.len,
         spell_dims,
         v2f(modal_center_x, curr_row_y + spell_dims.y * 0.5),
         .{ .direction = .horizontal, .space_between = 10 * ui_scaling },
-        spell_rects.slice(),
+        spell_rects.items,
     );
 
     const mouse_pos = plat.getMousePosScreen();
-    for (spell_choices.slice(), 0..) |*spell_choice, i| {
-        var rect = spell_rects.get(i);
+    for (spell_choices.buffer[0..spell_choices.len], 0..) |*spell_choice, i| {
+        var rect = spell_rects.items[i];
         const hovered = geom.pointIsInRectf(mouse_pos, rect);
         const clicked = hovered and plat.input_buffer.mouseBtnIsJustPressed(.left);
         if (hovered) {
@@ -795,7 +859,9 @@ pub fn rewardSpellChoiceUI(self: *Run, idx: usize) Error!void {
             const product = Shop.Product{ .kind = .{ .spell = spell_choice.spell } };
             if (self.canPickupProduct(&product)) {
                 self.pickupProduct(&product);
-                _ = self.reward_ui.?.rewards.orderedRemove(idx);
+                var rewards = boundedList(Reward, &self.reward_ui.?.rewards);
+                _ = rewards.orderedRemove(idx);
+                self.reward_ui.?.rewards.len = rewards.items.len;
                 self.reward_ui.?.selected_spell_choice_idx = null;
                 break;
             }
@@ -875,7 +941,7 @@ pub fn rewardUpdate(self: *Run) Error!void {
     const mouse_pos = plat.getMousePosScreen();
 
     var removed_idx: ?usize = null;
-    for (reward_ui.rewards.slice(), 0..) |*reward, i| {
+    for (reward_ui.rewards.buffer[0..reward_ui.rewards.len], 0..) |*reward, i| {
         var row_rect_color = Colorf.rgba(0.4, 0.4, 0.4, 0.7);
         var row_rect_pos = v2f(row_rect_x, curr_row_y);
         const hovered = geom.pointIsInRectf(mouse_pos, .{ .pos = row_rect_pos, .dims = row_rect_dims });
@@ -962,7 +1028,9 @@ pub fn rewardUpdate(self: *Run) Error!void {
         curr_row_y += row_rect_dims.y + 10;
     }
     if (removed_idx) |idx| {
-        _ = reward_ui.rewards.orderedRemove(idx);
+        var rewards = boundedList(Reward, &reward_ui.rewards);
+        _ = rewards.orderedRemove(idx);
+        reward_ui.rewards.len = rewards.items.len;
     }
 
     // anchor skip button to bottom of modal
@@ -1251,7 +1319,7 @@ pub fn deadUpdate(self: *Run) Error!void {
     if (debug.allow_room_retry) {
         if (menuUI.textButton(&self.imm_ui.commands, curr_btn_pos, "Retry Room", btn_dims, ui_scaling)) {
             try self.room.reset();
-            const r = self.places.get(self.curr_place_idx).room;
+            const r = self.places.buffer[self.curr_place_idx].room;
             self.ui_slots.beginRoom(&self.room, r.kind != .shop);
             self.screen = .room;
         }
@@ -1361,7 +1429,7 @@ pub fn showProgressUpdate(self: *Run) Error!void {
         if (curr_idx == i) {
             wiz_end_pos = curr_pos.add(v2f(0, -place_rect_dims.y));
         }
-        const place = &self.places.get(i);
+        const place = &self.places.buffer[i];
         const text: []const u8 = switch (place.room.kind) {
             .first => u.bufPrintLocal("{}", .{icon_text.Icon.doorway}) catch "f",
             .smol, .big => u.bufPrintLocal("{}", .{icon_text.Icon.ouchy_skull}) catch "r",
@@ -1427,7 +1495,7 @@ pub fn update(self: *Run) Error!void {
             return;
         }
         if (plat.input_buffer.keyIsJustPressed(.o)) {
-            const curr_room_place = self.places.get(self.curr_place_idx).room;
+            const curr_room_place = self.places.buffer[self.curr_place_idx].room;
             self.room.took_reward = false;
             self.makeRewards(curr_room_place.difficulty_per_wave * u.as(f32, curr_room_place.waves_params.num_waves));
             if (self.room.reward_chest == null) {
@@ -1503,7 +1571,7 @@ pub fn update(self: *Run) Error!void {
                             }
                         }
                     } else {
-                        if (try self.deckUI(self.deck.constSlice(), &self.deck_ui.hover, &self.deck_ui.scroll)) |interaction| {
+                        if (try self.deckUI(self.deck.buffer[0..self.deck.len], &self.deck_ui.hover, &self.deck_ui.scroll)) |interaction| {
                             if (interaction.state == .closed) {
                                 self.toggleShowDeck();
                             }

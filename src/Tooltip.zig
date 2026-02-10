@@ -52,13 +52,19 @@ pub const Info = union(InfoKind) {
 };
 pub const Desc = utl.BoundedString(256);
 pub const Title = utl.BoundedString(64);
-pub const InfoArr = std.BoundedArray(Info, 8);
 
-infos: InfoArr = .{},
+infos_buf: [8]Info = undefined,
+infos_len: usize = 0,
 title: Title = .{},
 desc: Desc = .{},
 
 pub const info_section_spacing: f32 = 4;
+
+pub fn pushInfo(self: *Tooltip, info: Info) void {
+    if (self.infos_len >= self.infos_buf.len) return;
+    self.infos_buf[self.infos_len] = info;
+    self.infos_len += 1;
+}
 
 pub fn measureInfoContent(info: *const Info) V2f {
     var title_buf: [64]u8 = undefined;
@@ -159,9 +165,10 @@ pub fn unqRender(tt: *const Tooltip, cmd_buf: *ImmUI.CmdBuf, pos: V2f, scaling: 
     const main_tooltip_dims = main_content_dims.add(padding.scale(2));
 
     // measure le infos
-    var infos_dimses = std.BoundedArray(V2f, (InfoArr{}).buffer.len){};
+    var infos_dimses_buf: [8]V2f = undefined;
+    var infos_dimses = std.ArrayList(V2f).initBuffer(infos_dimses_buf[0..]);
     var total_infos_dims = V2f{};
-    for (tt.infos.constSlice()) |*info| {
+    for (tt.infos_buf[0..tt.infos_len]) |*info| {
         const info_dims = measureInfoContent(info);
         const info_dims_scaled = info_dims.scale(scaling).add(padding.scale(2));
         infos_dimses.appendAssumeCapacity(info_dims_scaled);
@@ -169,11 +176,11 @@ pub fn unqRender(tt: *const Tooltip, cmd_buf: *ImmUI.CmdBuf, pos: V2f, scaling: 
         total_infos_dims.y += info_dims_scaled.y;
         total_infos_dims.x = @max(total_infos_dims.x, info_dims_scaled.x);
     }
-    total_infos_dims.y += info_tooltip_spacing * @max(utl.as(f32, infos_dimses.len) - 1, 0);
+    total_infos_dims.y += info_tooltip_spacing * @max(utl.as(f32, infos_dimses.items.len) - 1, 0);
 
     const entire_everything_dims = v2f(
         @max(main_tooltip_dims.x, total_infos_dims.x),
-        main_tooltip_dims.y + if (infos_dimses.len > 0) info_tooltip_spacing + total_infos_dims.y else 0,
+        main_tooltip_dims.y + if (infos_dimses.items.len > 0) info_tooltip_spacing + total_infos_dims.y else 0,
     );
 
     var adjusted_pos = pos;
@@ -209,8 +216,8 @@ pub fn unqRender(tt: *const Tooltip, cmd_buf: *ImmUI.CmdBuf, pos: V2f, scaling: 
     }
 
     var info_tooltip_pos = adjusted_pos.add(v2f(0, main_tooltip_dims.y + info_tooltip_spacing));
-    for (tt.infos.constSlice(), 0..) |*info, i| {
+    for (tt.infos_buf[0..tt.infos_len], 0..) |*info, i| {
         try unqRenderInfo(info, cmd_buf, info_tooltip_pos, scaling);
-        info_tooltip_pos.y += infos_dimses.get(i).y + info_tooltip_spacing;
+        info_tooltip_pos.y += infos_dimses.items[i].y + info_tooltip_spacing;
     }
 }

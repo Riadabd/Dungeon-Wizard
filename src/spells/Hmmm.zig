@@ -64,7 +64,7 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             StatusEffect.getIcon(.quickdraw),
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .status = .quickdraw });
+    tt.pushInfo(.{ .status = .quickdraw });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

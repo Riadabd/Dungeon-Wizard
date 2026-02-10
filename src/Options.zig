@@ -24,6 +24,72 @@ const player = @import("player.zig");
 const icon_text = @import("icon_text.zig");
 const Options = @This();
 
+fn BufList(comptime T: type, comptime N: usize) type {
+    return struct {
+        buffer: [N]T = undefined,
+        len: usize = 0,
+
+        const Self = @This();
+
+        fn asList(self: *Self) std.ArrayList(T) {
+            var list = std.ArrayList(T).initBuffer(self.buffer[0..]);
+            list.items.len = self.len;
+            return list;
+        }
+
+        pub fn fromSlice(items: []const T) error{Overflow}!Self {
+            if (items.len > N) return error.Overflow;
+            var ret: Self = .{};
+            @memcpy(ret.buffer[0..items.len], items);
+            ret.len = items.len;
+            return ret;
+        }
+
+        pub fn clear(self: *Self) void {
+            self.len = 0;
+        }
+
+        pub fn append(self: *Self, item: T) error{Overflow}!void {
+            var list = self.asList();
+            list.appendBounded(item) catch return error.Overflow;
+            self.len = list.items.len;
+        }
+
+        pub fn appendAssumeCapacity(self: *Self, item: T) void {
+            var list = self.asList();
+            list.appendAssumeCapacity(item);
+            self.len = list.items.len;
+        }
+
+        pub fn insert(self: *Self, idx: usize, item: T) error{Overflow}!void {
+            var list = self.asList();
+            list.insertBounded(idx, item) catch return error.Overflow;
+            self.len = list.items.len;
+        }
+
+        pub fn resize(self: *Self, new_len: usize) error{Overflow}!void {
+            if (new_len > N) return error.Overflow;
+            self.len = new_len;
+        }
+
+        pub fn get(self: *const Self, idx: usize) T {
+            return self.buffer[idx];
+        }
+
+        pub fn getPtr(self: *Self, idx: usize) *T {
+            return &self.buffer[idx];
+        }
+
+        pub fn slice(self: *Self) []T {
+            return self.buffer[0..self.len];
+        }
+
+        pub fn constSlice(self: *const Self) []const T {
+            return self.buffer[0..self.len];
+        }
+    };
+}
+
 const ui_el_text_padding: V2f = v2f(5, 5);
 
 pub const Slider = struct {
@@ -178,8 +244,8 @@ pub const Display = struct {
         borderless,
         fullscreen,
     } = .windowed,
-    resolutions_strings: std.BoundedArray(ResLabel, max_resolutions) = .{},
-    resolutions: std.BoundedArray(V2i, max_resolutions) = .{},
+    resolutions_strings: BufList(ResLabel, max_resolutions) = .{},
+    resolutions: BufList(V2i, max_resolutions) = .{},
     selected_resolution: V2i = .{},
     dropdown: DropdownMenu = .{},
     custom_resolution: bool = false, // if true, the 0th resolution in the list is "custom" (manual resize)
@@ -206,7 +272,7 @@ pub const Controls = struct {
         .selected_idx = @intFromEnum(CastMethod.left_click),
     },
     //auto_self_cast: bool = true, // TODO?
-    input_bindings: std.BoundedArray(InputBinding, 32) = .{},
+    input_bindings: BufList(InputBinding, 32) = .{},
     // serialized e.g.:
     // controls.input_bindings[0].keyboard_key = .q
 
@@ -271,7 +337,7 @@ pub const Controls = struct {
                 };
             }
         };
-        pub const InputsArray = std.BoundedArray(InputBinding.KindData, max_input_bindings);
+        pub const InputsArray = BufList(InputBinding.KindData, max_input_bindings);
         pub const Command = union(enum) {
             action: player.Action.Id,
             stop_moving,
@@ -866,11 +932,12 @@ fn updateDisplay(self: *Options, cmd_buf: *ImmUI.CmdBuf, pos: V2f) Error!bool {
 
         const dropdown_pos = pos.add(v2f(cast_method_text_dims.x + 8 * ui_scaling, 0));
         // copy the pointers to the string slices, because we want a []const []const u8 for dropdown.update()
-        var strings_buf = std.BoundedArray([]const u8, Display.max_resolutions){};
+        var strings_buf_storage: [Display.max_resolutions][]const u8 = undefined;
+        var strings_buf = std.ArrayList([]const u8).initBuffer(strings_buf_storage[0..]);
         for (self.display.resolutions_strings.constSlice()) |*str| {
             strings_buf.appendAssumeCapacity(str.constSlice());
         }
-        if (try self.display.dropdown.update(cmd_buf, dropdown_pos, 1, strings_buf.constSlice())) |new_idx| {
+        if (try self.display.dropdown.update(cmd_buf, dropdown_pos, 1, strings_buf.items)) |new_idx| {
             self.display.selected_resolution = self.display.resolutions.get(new_idx);
             updateScreenDims(plat, self.display.selected_resolution, true);
             App.get().resolutionChanged();

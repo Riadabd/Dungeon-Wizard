@@ -57,7 +57,8 @@ pub const RenderTexture2D = struct {
 const OnScreenLogLine = u.BoundedString(256);
 
 log: Log = undefined,
-onscreen_log_buf_lines: std.BoundedArray(OnScreenLogLine, 32) = .{},
+onscreen_log_buf_lines: [32]OnScreenLogLine = undefined,
+onscreen_log_buf_lines_len: usize = 0,
 stack_base: usize = 0,
 should_exit: bool = false,
 app_dll: ?std.DynLib = null,
@@ -388,14 +389,14 @@ fn loadStaticApp(self: *Platform) void {
 
 fn drawOnScreenLog(self: *Platform) void {
     var y: f32 = 10;
-    for (self.onscreen_log_buf_lines.constSlice()) |line| {
+    for (self.onscreen_log_buf_lines[0..self.onscreen_log_buf_lines_len]) |line| {
         const pos = v2f(10, y);
         const dims = self.measureText(line.constSlice(), .{}) catch continue;
         self.rectf(pos, dims, .{ .fill_color = Colorf.black.fade(0.5) });
         self.textf(pos, "{s}", .{line.constSlice()}, .{ .color = .white }) catch {};
         y += 20;
     }
-    self.onscreen_log_buf_lines.clear();
+    self.onscreen_log_buf_lines_len = 0;
 }
 
 pub fn run(self: *Platform) Error!void {
@@ -508,7 +509,9 @@ pub fn run(self: *Platform) Error!void {
 
 pub fn onScreenLog(self: *Platform, comptime fmt: []const u8, args: anytype) void {
     const s = u.bufPrintLocal(fmt, args) catch return;
-    self.onscreen_log_buf_lines.append(OnScreenLogLine.fromSlice(s) catch return) catch return;
+    if (self.onscreen_log_buf_lines_len >= self.onscreen_log_buf_lines.len) return;
+    self.onscreen_log_buf_lines[self.onscreen_log_buf_lines_len] = OnScreenLogLine.fromSlice(s) catch return;
+    self.onscreen_log_buf_lines_len += 1;
 }
 
 const key_map = std.EnumArray(Key, c_int).init(.{
@@ -764,7 +767,8 @@ pub fn sectorf(_: *Platform, center: V2f, radius: f32, start_ang_rads: f32, end_
 }
 
 pub fn ellipsef(self: *Platform, center: V2f, radii: V2f, opt: draw.PolyOpt) void {
-    var pt_buf = std.BoundedArray(V2f, 38){};
+    var pt_buf_storage: [38]V2f = undefined;
+    var pt_buf = std.ArrayList(V2f).initBuffer(pt_buf_storage[0..]);
     var center_r = center;
     if (opt.round_to_pixel) {
         center_r = center_r.scale(self.curr_cam.zoom).round().scale(1 / self.curr_cam.zoom);
@@ -783,11 +787,11 @@ pub fn ellipsef(self: *Platform, center: V2f, radii: V2f, opt: draw.PolyOpt) voi
         i += 10;
     }
     if (opt.rot_rads != 0) {
-        for (pt_buf.slice()) |*pt| {
+        for (pt_buf.items) |*pt| {
             pt.* = pt.rotRadians(opt.rot_rads);
         }
     }
-    for (pt_buf.slice()) |*pt| {
+    for (pt_buf.items) |*pt| {
         pt.* = pt.add(center_r);
     }
 
@@ -797,10 +801,10 @@ pub fn ellipsef(self: *Platform, center: V2f, radii: V2f, opt: draw.PolyOpt) voi
     }
 
     if (opt.fill_color) |color| {
-        r.DrawTriangleFan(@ptrCast(pt_buf.constSlice()), u.as(c_int, pt_buf.len), cColorf(color));
+        r.DrawTriangleFan(@ptrCast(pt_buf.items), u.as(c_int, pt_buf.items.len), cColorf(color));
     }
     if (opt.outline) |outline| {
-        r.DrawLineStrip(@ptrCast(pt_buf.constSlice()[1..]), u.as(c_int, pt_buf.len - 1), cColorf(outline.color));
+        r.DrawLineStrip(@ptrCast(pt_buf.items[1..]), u.as(c_int, pt_buf.items.len - 1), cColorf(outline.color));
     }
 }
 
@@ -913,7 +917,7 @@ pub fn textureToImageBuf(_: *Platform, texture: Texture2D) ImageBuf {
     const dims = V2i.iToV2i(c_int, r_img.width, r_img.height);
     return .{
         .dims = dims,
-        .data = @alignCast(@ptrCast(r_colors[0..u.as(usize, dims.x * dims.y)])),
+        .data = @ptrCast(@alignCast(r_colors[0..u.as(usize, dims.x * dims.y)])),
         .r_img = r_img,
         .r_colors = r_colors,
     };
@@ -1164,7 +1168,7 @@ pub const AudioStream = struct {
         const frames_left = r_wave.frameCount - self.play_offset;
         const batch_size = @min(frames_left, buf_sz);
         const batch_end = self.play_offset + batch_size;
-        const wave_buf: []FrameInt = @as([*]FrameInt, @alignCast(@ptrCast(r_wave.data.?)))[0..r_wave.frameCount];
+        const wave_buf: []FrameInt = @as([*]FrameInt, @ptrCast(@alignCast(r_wave.data.?)))[0..r_wave.frameCount];
         var buf = wave_buf[self.play_offset..batch_end];
         // we reached the end of the data, and we want to loop.
         // but raylib will always play the FULL buffer - all the way to the end (zeroing out unused part)

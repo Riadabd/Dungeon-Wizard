@@ -71,7 +71,7 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             protec.num_stacks,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .status = .protected });
+    tt.pushInfo(.{ .status = .protected });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

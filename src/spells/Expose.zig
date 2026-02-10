@@ -167,7 +167,7 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             StatusEffect.getDurationSeconds(.exposed, expose.hit_effect.status_stacks.get(.exposed)).?,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .status = .exposed });
+    tt.pushInfo(.{ .status = .exposed });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

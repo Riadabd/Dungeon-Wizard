@@ -138,7 +138,10 @@ pub fn cast(self: *const Spell, caster: *Thing, room: *Room, params: Params) Err
             const rdst = 2 + 4 * room.rng.random().float(f32);
             const dir = V2f.fromAngleRadians(rang);
             const point = curr_pos.add(dir.scale(rdst));
-            renderer.points.append(point) catch break;
+            var points = std.ArrayList(V2f).initBuffer(renderer.points.buffer[0..]);
+            points.items.len = renderer.points.len;
+            points.appendBounded(point) catch break;
+            renderer.points.len = points.items.len;
             i += 1;
         }
     }
@@ -180,8 +183,8 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             hit_damage,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .damage = .lightning });
-    tt.infos.appendAssumeCapacity(.{ .status = .stunned });
+    tt.pushInfo(.{ .damage = .lightning });
+    tt.pushInfo(.{ .status = .stunned });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

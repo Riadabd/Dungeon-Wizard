@@ -85,16 +85,17 @@ pub fn spawnFiresInRadius(room: *Room, pos: V2f, radius: f32, comptime max_spawn
     const rnd = room.rng.random();
     const min_fire_dist = fire_proto.hitbox.?.radius * 2;
 
-    var fire_spawn_positions = std.BoundedArray(V2f, max_spawned){};
+    var fire_spawn_positions_buf: [max_spawned]V2f = undefined;
+    var fire_spawn_positions = std.ArrayList(V2f).initBuffer(fire_spawn_positions_buf[0..]);
     var failed_iters: usize = 0;
-    while (fire_spawn_positions.len < fire_spawn_positions.buffer.len and failed_iters < max_spawned * 10) {
+    while (fire_spawn_positions.items.len < fire_spawn_positions.capacity and failed_iters < max_spawned * 10) {
         const candidate_pos = v2f(
             rnd.floatNorm(f32) * sq_size,
             rnd.floatNorm(f32) * sq_size,
         ).add(top_left);
         const valid = blk: {
             if (candidate_pos.dist(pos) > radius) break :blk false;
-            for (fire_spawn_positions.constSlice()) |existing_pos| {
+            for (fire_spawn_positions.items) |existing_pos| {
                 if (candidate_pos.dist(existing_pos) < min_fire_dist) break :blk false;
             }
             break :blk true;
@@ -103,9 +104,9 @@ pub fn spawnFiresInRadius(room: *Room, pos: V2f, radius: f32, comptime max_spawn
             failed_iters += 1;
             continue;
         }
-        fire_spawn_positions.append(candidate_pos) catch unreachable;
+        fire_spawn_positions.appendBounded(candidate_pos) catch unreachable;
     }
-    for (fire_spawn_positions.constSlice()) |fire_pos| {
+    for (fire_spawn_positions.items) |fire_pos| {
         _ = try room.queueSpawnThing(&fire_proto, fire_pos);
     }
 }
@@ -231,8 +232,8 @@ pub fn getTooltip(self: *const Spell, tt: *Spell.Tooltip) Error!void {
             explode_dmg,
         }),
     );
-    tt.infos.appendAssumeCapacity(.{ .damage = .fire });
-    tt.infos.appendAssumeCapacity(.{ .status = .lit });
+    tt.pushInfo(.{ .damage = .fire });
+    tt.pushInfo(.{ .status = .lit });
 }
 
 pub fn getNewTags(self: *const Spell) Error!Spell.NewTag.Array {

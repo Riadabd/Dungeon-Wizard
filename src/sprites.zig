@@ -197,7 +197,8 @@ pub const SpriteAnim = struct {
     flip_y: bool = false,
     // meta from spritesheet
     origin: draw.TextureOrigin = .topleft,
-    events: std.BoundedArray(AnimEvent, 4) = .{},
+    events_buf: [4]AnimEvent = undefined,
+    events_len: usize = 0,
     points: std.EnumArray(PointName, ?V2f) = std.EnumArray(PointName, ?V2f).initFill(null),
 
     pub fn getRenderFrame(self: *const SpriteAnim, anim_frame_idx: usize) RenderFrame {
@@ -215,7 +216,7 @@ pub const SpriteAnim = struct {
 
     pub fn getFrameEvents(self: *const SpriteAnim, anim_frame_idx: usize) AnimEvent.Set {
         var ret = std.EnumSet(AnimEvent.Kind).initEmpty();
-        for (self.events.constSlice()) |e| {
+        for (self.events_buf[0..self.events_len]) |e| {
             if (utl.as(usize, e.frame) == anim_frame_idx) {
                 ret.insert(e.kind);
             }
@@ -393,7 +394,7 @@ pub const SpriteAnimator = struct {
             return null;
         }
         const anim = maybe_anim.?;
-        for (anim.events.constSlice()) |e| {
+        for (anim.events_buf[0..anim.events_len]) |e| {
             if (e.kind == event) {
                 const e_frame_idx = utl.as(usize, e.frame);
                 if (e.frame <= self.curr_anim_frame) return null;

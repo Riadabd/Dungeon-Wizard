@@ -234,28 +234,24 @@ pub fn getCircleCollisionWithTiles(mask: Thing.Collision.Mask, pos: V2f, radius:
             }
             break :blk ret;
         };
-        const corners_cw = blk: {
-            const corner_dirs: [4][2]TileMap.NeighborDir = .{ .{ .N, .W }, .{ .N, .E }, .{ .S, .E }, .{ .S, .W } };
-            var ret = std.BoundedArray(V2f, 4){};
-            for (corner_dirs, 0..) |dirs, i| {
-                if (passable_neighbors.get(dirs[0]) and passable_neighbors.get(dirs[1])) {
-                    ret.append(all_corners_cw[i]) catch unreachable;
-                }
+        const corner_dirs: [4][2]TileMap.NeighborDir = .{ .{ .N, .W }, .{ .N, .E }, .{ .S, .E }, .{ .S, .W } };
+        var corners_cw_buf: [4]V2f = undefined;
+        var corners_cw = std.ArrayList(V2f).initBuffer(corners_cw_buf[0..]);
+        for (corner_dirs, 0..) |dirs, i| {
+            if (passable_neighbors.get(dirs[0]) and passable_neighbors.get(dirs[1])) {
+                corners_cw.appendBounded(all_corners_cw[i]) catch unreachable;
             }
-            break :blk ret;
-        };
-        const edges_cw = blk: {
-            var ret = std.BoundedArray([2]V2f, 4){};
-            for (TileMap.neighbor_dirs, 0..) |dir, i| {
-                if (passable_neighbors.get(dir)) {
-                    ret.append(all_edges_cw[i]) catch unreachable;
-                }
+        }
+        var edges_cw_buf: [4][2]V2f = undefined;
+        var edges_cw = std.ArrayList([2]V2f).initBuffer(edges_cw_buf[0..]);
+        for (TileMap.neighbor_dirs, 0..) |dir, i| {
+            if (passable_neighbors.get(dir)) {
+                edges_cw.appendBounded(all_edges_cw[i]) catch unreachable;
             }
-            break :blk ret;
-        };
+        }
 
         // check edges before corners, to rule out areas in corner radius that are also on edges
-        for (edges_cw.constSlice()) |edge| {
+        for (edges_cw.items) |edge| {
             const edge_v = edge[1].sub(edge[0]);
             const pos_v = pos.sub(edge[0]);
             const edge_v_len = edge_v.length();
@@ -281,7 +277,7 @@ pub fn getCircleCollisionWithTiles(mask: Thing.Collision.Mask, pos: V2f, radius:
         }
         // finally corners; only the parts which are beyond the edge
         // TODO optimization - discover the corner in edge detection part - using dot product used to rule out line seg
-        for (corners_cw.constSlice()) |corner_pos| {
+        for (corners_cw.items) |corner_pos| {
             const pos_to_corner = corner_pos.sub(pos);
             const dist = pos_to_corner.length();
             if (dist < radius) {
@@ -329,31 +325,27 @@ pub fn getNextSweptCircleCollisionWithTiles(mask: Thing.Collision.Mask, ray_pos:
             }
             break :blk ret;
         };
-        const corners_cw = blk: {
-            const corner_dirs: [4][2]TileMap.NeighborDir = .{ .{ .N, .W }, .{ .N, .E }, .{ .S, .E }, .{ .S, .W } };
-            var ret = std.BoundedArray(V2f, 4){};
-            for (corner_dirs, 0..) |dirs, i| {
-                if (passable_neighbors.get(dirs[0]) and passable_neighbors.get(dirs[1])) {
-                    ret.append(all_corners_cw[i]) catch unreachable;
-                }
+        const corner_dirs: [4][2]TileMap.NeighborDir = .{ .{ .N, .W }, .{ .N, .E }, .{ .S, .E }, .{ .S, .W } };
+        var corners_cw_buf: [4]V2f = undefined;
+        var corners_cw = std.ArrayList(V2f).initBuffer(corners_cw_buf[0..]);
+        for (corner_dirs, 0..) |dirs, i| {
+            if (passable_neighbors.get(dirs[0]) and passable_neighbors.get(dirs[1])) {
+                corners_cw.appendBounded(all_corners_cw[i]) catch unreachable;
             }
-            break :blk ret;
-        };
-        const edges_cw = blk: {
-            var ret = std.BoundedArray([2]V2f, 4){};
-            for (TileMap.neighbor_dirs, 0..) |dir, i| {
-                if (passable_neighbors.get(dir)) {
-                    ret.append(all_edges_cw[i]) catch unreachable;
-                }
+        }
+        var edges_cw_buf: [4][2]V2f = undefined;
+        var edges_cw = std.ArrayList([2]V2f).initBuffer(edges_cw_buf[0..]);
+        for (TileMap.neighbor_dirs, 0..) |dir, i| {
+            if (passable_neighbors.get(dir)) {
+                edges_cw.appendBounded(all_edges_cw[i]) catch unreachable;
             }
-            break :blk ret;
-        };
+        }
         // check if ray starts in tile
         if (getPointCollisionInTile(ray_pos, tile, passable_neighbors)) |c| {
             return c;
         }
 
-        for (edges_cw.constSlice()) |edge| {
+        for (edges_cw.items) |edge| {
             const edge_v = edge[1].sub(edge[0]);
             // circle around ray endpoints touch edge (i.e. beginning and end of ray)
             {
@@ -406,7 +398,7 @@ pub fn getNextSweptCircleCollisionWithTiles(mask: Thing.Collision.Mask, ray_pos:
             }
         }
         // if ray hits circle centered at corner, swept circle hits corner
-        for (corners_cw.constSlice()) |corner_pos| {
+        for (corners_cw.items) |corner_pos| {
             if (getRayCircleCollision(ray_pos, ray_v, corner_pos, radius)) |r_coll| {
                 var coll = r_coll;
                 coll.pos = corner_pos.add(coll.normal.neg().scale(radius));

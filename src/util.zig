@@ -262,7 +262,50 @@ pub const TickCounter = struct {
 };
 
 pub fn BoundedString(max_len: usize) type {
-    return std.BoundedArray(u8, max_len);
+    return struct {
+        const Self = @This();
+
+        buffer: [max_len]u8 = undefined,
+        len: usize = 0,
+
+        pub fn fromSlice(items: []const u8) error{Overflow}!Self {
+            if (items.len > max_len) return error.Overflow;
+            var ret: Self = .{};
+            @memcpy(ret.buffer[0..items.len], items);
+            ret.len = items.len;
+            return ret;
+        }
+
+        pub fn slice(self: *Self) []u8 {
+            return self.buffer[0..self.len];
+        }
+
+        pub fn constSlice(self: *const Self) []const u8 {
+            return self.buffer[0..self.len];
+        }
+
+        pub fn clear(self: *Self) void {
+            self.len = 0;
+        }
+
+        pub fn append(self: *Self, item: u8) error{Overflow}!void {
+            if (self.len >= max_len) return error.Overflow;
+            self.buffer[self.len] = item;
+            self.len += 1;
+        }
+
+        pub fn appendAssumeCapacity(self: *Self, item: u8) void {
+            std.debug.assert(self.len < max_len);
+            self.buffer[self.len] = item;
+            self.len += 1;
+        }
+
+        pub fn appendSlice(self: *Self, items: []const u8) error{Overflow}!void {
+            if (self.len + items.len > max_len) return error.Overflow;
+            @memcpy(self.buffer[self.len .. self.len + items.len], items);
+            self.len += items.len;
+        }
+    };
 }
 
 pub fn enumToString(E: type, m: E) []const u8 {

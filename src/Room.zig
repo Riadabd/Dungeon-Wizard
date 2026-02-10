@@ -29,6 +29,19 @@ const Spell = @import("Spell.zig");
 const Item = @import("Item.zig");
 const Run = @import("Run.zig");
 
+fn BufList(comptime T: type, comptime N: usize) type {
+    return struct {
+        buffer: [N]T = undefined,
+        len: usize = 0,
+    };
+}
+
+fn boundedList(comptime T: type, list_buf: anytype) std.ArrayList(T) {
+    var list = std.ArrayList(T).initBuffer(list_buf.buffer[0..]);
+    list.items.len = list_buf.len;
+    return list;
+}
+
 pub const max_bosses_in_room = 2;
 pub const max_enemies_in_room = 32;
 pub const max_allies_in_room = 16;
@@ -37,7 +50,7 @@ pub const max_creatures_in_room = max_bosses_in_room + max_enemies_in_room + max
 pub const max_vfx_in_room = max_creatures_in_room * 4;
 pub const max_things_in_room = max_creatures_in_room + max_vfx_in_room;
 
-pub const ThingBoundedArray = std.BoundedArray(pool.Id, max_things_in_room);
+pub const ThingIdList = BufList(pool.Id, max_things_in_room);
 
 pub const InitParams = struct {
     tilemap_ref: Data.Ref(TileMap),
@@ -68,19 +81,30 @@ pub const Wave = struct {
         boss: bool = false,
     };
     total_difficulty: f32 = 0,
-    spawns: std.BoundedArray(Spawn, 16) = .{},
+    spawns: BufList(Spawn, 16) = .{},
 };
-pub const WavesArray = std.BoundedArray(Wave, 8);
+pub const WavesArray = BufList(Wave, 8);
 
 fn makeWaves(tilemap: *const TileMap, rng: std.Random, params: WavesParams, array: *WavesArray) void {
     const data = App.get().data;
-    array.clear();
+    array.len = 0;
     switch (params.room_kind) {
         .first => {
             if (tilemap.wave_spawns.len > 0) {
                 var wave = Wave{};
-                wave.spawns.append(.{ .pos = tilemap.wave_spawns.get(0).pos, .proto = data.creature_protos.get(.dummy) }) catch unreachable;
-                array.append(wave) catch unreachable;
+                {
+                    var wave_spawns = boundedList(Wave.Spawn, &wave.spawns);
+                    wave_spawns.appendBounded(.{
+                        .pos = tilemap.wave_spawns.buffer[0].pos,
+                        .proto = data.creature_protos.get(.dummy),
+                    }) catch unreachable;
+                    wave.spawns.len = wave_spawns.items.len;
+                }
+                {
+                    var waves = boundedList(Wave, array);
+                    waves.appendBounded(wave) catch unreachable;
+                    array.len = waves.items.len;
+                }
                 return;
             }
         },
@@ -102,8 +126,9 @@ fn makeWaves(tilemap: *const TileMap, rng: std.Random, params: WavesParams, arra
     Log.info("num_waves: {}, difficulty per wave: {d:.2}, error: {d:.2}", .{ num_waves, difficulty_per_wave, difficulty_error_per_wave });
     var difficulty_left = total_difficulty;
 
-    var all_spawn_positions = std.BoundedArray(V2f, TileMap.max_map_spawns){};
-    for (tilemap.wave_spawns.constSlice()) |spawn| {
+    var all_spawn_positions_buf: [TileMap.max_map_spawns]V2f = undefined;
+    var all_spawn_positions = std.ArrayList(V2f).initBuffer(all_spawn_positions_buf[0..]);
+    for (tilemap.wave_spawns.buffer[0..tilemap.wave_spawns.len]) |spawn| {
         all_spawn_positions.appendAssumeCapacity(spawn.pos);
     }
     Log.info("  total spawn positions: {}", .{tilemap.wave_spawns.len});
@@ -114,36 +139,39 @@ fn makeWaves(tilemap: *const TileMap, rng: std.Random, params: WavesParams, arra
         var wave = Wave{};
         Log.info(" Wave {}: iter: {}", .{ wave_i, wave_iter });
 
-        var enemy_protos: std.BoundedArray(Thing, WavesParams.max_max_kinds_per_wave) = .{};
+        var enemy_protos_buf: [WavesParams.max_max_kinds_per_wave]Thing = undefined;
+        var enemy_protos = std.ArrayList(Thing).initBuffer(enemy_protos_buf[0..]);
 
         for (0..params.max_kinds_per_wave) |_| {
             const idx = rng.weightedIndex(f32, &params.enemy_probabilities.values);
             const kind: Thing.CreatureKind = @enumFromInt(idx);
             if (params.enemy_probabilities.get(kind) == 0) break;
-            enemy_protos.append(data.creature_protos.get(kind)) catch unreachable;
+            enemy_protos.appendBounded(data.creature_protos.get(kind)) catch unreachable;
             Log.info("    possible enemy: {any} : probability: {d:.2}", .{ kind, params.enemy_probabilities.get(kind) });
         }
 
-        rng.shuffleWithIndex(V2f, all_spawn_positions.slice(), u32);
+        rng.shuffleWithIndex(V2f, all_spawn_positions.items, u32);
         var curr_spawn_pos_idx: usize = 0;
         if (wave_i == 0) {
             if (params.boss) |boss_kind| {
-                wave.spawns.appendAssumeCapacity(.{
-                    .pos = all_spawn_positions.buffer[curr_spawn_pos_idx],
+                var wave_spawns = boundedList(Wave.Spawn, &wave.spawns);
+                wave_spawns.appendAssumeCapacity(.{
+                    .pos = all_spawn_positions.items[curr_spawn_pos_idx],
                     .proto = data.creature_protos.get(boss_kind),
                     .boss = true,
                 });
+                wave.spawns.len = wave_spawns.items.len;
                 curr_spawn_pos_idx += 1;
             }
         }
 
-        if (enemy_protos.len > 0) {
-            while (difficulty_left_in_wave > 0 and curr_spawn_pos_idx < all_spawn_positions.len) {
+        if (enemy_protos.items.len > 0) {
+            while (difficulty_left_in_wave > 0 and curr_spawn_pos_idx < all_spawn_positions.items.len) {
                 var enemy_iter: usize = 0;
                 const proto = blk: {
                     while (enemy_iter < 3) {
-                        const idx = rng.uintLessThan(usize, enemy_protos.len);
-                        const enemy_proto = enemy_protos.get(idx);
+                        const idx = rng.uintLessThan(usize, enemy_protos.items.len);
+                        const enemy_proto = enemy_protos.items[idx];
                         if (difficulty_left_in_wave - enemy_proto.enemy_difficulty < -difficulty_error_per_wave) {
                             enemy_iter += 1;
                             continue;
@@ -155,10 +183,14 @@ fn makeWaves(tilemap: *const TileMap, rng: std.Random, params: WavesParams, arra
                 };
                 wave.total_difficulty += proto.enemy_difficulty;
                 difficulty_left_in_wave -= proto.enemy_difficulty;
-                wave.spawns.append(.{
-                    .pos = all_spawn_positions.buffer[curr_spawn_pos_idx],
-                    .proto = proto,
-                }) catch unreachable;
+                {
+                    var wave_spawns = boundedList(Wave.Spawn, &wave.spawns);
+                    wave_spawns.appendBounded(.{
+                        .pos = all_spawn_positions.items[curr_spawn_pos_idx],
+                        .proto = proto,
+                    }) catch unreachable;
+                    wave.spawns.len = wave_spawns.items.len;
+                }
                 Log.info("  SPAWN: {any} : difficulty: {d:.2}", .{ proto.creature_kind.?, proto.enemy_difficulty });
                 curr_spawn_pos_idx += 1;
             }
@@ -171,7 +203,11 @@ fn makeWaves(tilemap: *const TileMap, rng: std.Random, params: WavesParams, arra
             continue;
         }
         difficulty_left -= wave.total_difficulty;
-        array.append(wave) catch unreachable;
+        {
+            var waves = boundedList(Wave, array);
+            waves.appendBounded(wave) catch unreachable;
+            array.len = waves.items.len;
+        }
         wave_i += 1;
         wave_iter = 0;
     }
@@ -182,8 +218,8 @@ fn makeWaves(tilemap: *const TileMap, rng: std.Random, params: WavesParams, arra
 
 camera: draw.Camera2D = .{},
 things: Thing.Pool = undefined,
-spawn_queue: ThingBoundedArray = .{},
-free_queue: ThingBoundedArray = .{},
+spawn_queue: ThingIdList = .{},
+free_queue: ThingIdList = .{},
 player_id: ?pool.Id = null,
 draw_pile: Spell.SpellArray = .{},
 discard_pile: Spell.SpellArray = .{},
@@ -195,9 +231,9 @@ advance_one_frame: bool = false, // if true, pause on next frame
 waves: WavesArray = .{},
 wave_timer: u.TickCounter = undefined,
 curr_wave: i32 = 0,
-enemies_alive: std.BoundedArray(Thing.Id, max_enemies_in_room) = .{},
-bosses: std.BoundedArray(Thing.Id, max_bosses_in_room) = .{},
-exits: std.BoundedArray(TileMap.ExitDoor, TileMap.max_map_exits) = .{},
+enemies_alive: BufList(Thing.Id, max_enemies_in_room) = .{},
+bosses: BufList(Thing.Id, max_bosses_in_room) = .{},
+exits: BufList(TileMap.ExitDoor, TileMap.max_map_exits) = .{},
 progress_state: union(enum) {
     none,
     lost,
@@ -278,7 +314,7 @@ pub fn reset(self: *Room) Error!void {
 
     makeWaves(tilemap, self.rng.random(), self.init_params.waves_params, &self.waves);
 
-    for (tilemap.creatures.constSlice()) |spawn| {
+    for (tilemap.creatures.buffer[0..tilemap.creatures.len]) |spawn| {
         Log.info("Room init: spawning a {any}", .{spawn.kind});
         if (spawn.kind == .player) {
             self.player_id = try self.queueSpawnThing(&self.init_params.player, spawn.pos);
@@ -339,15 +375,23 @@ pub fn queueSpawnThing(self: *Room, proto: *const Thing, pos: V2f) Error!?pool.I
         try proto.copyTo(thing);
         thing.spawn_state = .spawning;
         thing.pos = pos;
-        try self.spawn_queue.append(thing.id);
+        {
+            var spawn_queue = boundedList(pool.Id, &self.spawn_queue);
+            try spawn_queue.appendBounded(thing.id);
+            self.spawn_queue.len = spawn_queue.items.len;
+        }
         if (thing.isEnemy()) {
-            self.enemies_alive.append(thing.id) catch {
+            var enemies_alive = boundedList(Thing.Id, &self.enemies_alive);
+            enemies_alive.appendBounded(thing.id) catch {
                 Log.warn("Failed to add to enemies list!", .{});
             };
+            self.enemies_alive.len = enemies_alive.items.len;
             if (thing.is_boss) {
-                self.bosses.append(thing.id) catch {
+                var bosses = boundedList(Thing.Id, &self.bosses);
+                bosses.appendBounded(thing.id) catch {
                     Log.warn("Failed to add to bosses list!", .{});
                 };
+                self.bosses.len = bosses.items.len;
             }
         }
         return thing.id;
@@ -402,30 +446,38 @@ pub fn drawSpell(self: *Room) ?Spell {
     if (self.draw_pile.len > 0) {
         const last = u.as(u32, self.draw_pile.len - 1);
         const idx = u.as(usize, self.rng.random().intRangeAtMost(u32, 0, last));
-        const spell = self.draw_pile.swapRemove(idx);
+        var draw_pile = Spell.spellArrayList(&self.draw_pile);
+        const spell = draw_pile.swapRemove(idx);
+        self.draw_pile.len = draw_pile.items.len;
         return spell;
     } else {
-        self.draw_pile.insertSlice(0, self.discard_pile.constSlice()) catch unreachable;
+        var draw_pile = Spell.spellArrayList(&self.draw_pile);
+        draw_pile.insertSliceBounded(0, self.discard_pile.buffer[0..self.discard_pile.len]) catch unreachable;
+        self.draw_pile.len = draw_pile.items.len;
         self.discard_pile.len = 0;
     }
     return null;
 }
 
 pub fn discardSpell(self: *Room, spell: Spell) void {
-    self.discard_pile.append(spell) catch @panic("discard pile ran out of space");
+    var discard_pile = Spell.spellArrayList(&self.discard_pile);
+    discard_pile.appendBounded(spell) catch @panic("discard pile ran out of space");
+    self.discard_pile.len = discard_pile.items.len;
 }
 
 pub fn mislaySpell(self: *Room, spell: Spell) void {
-    self.mislay_pile.append(spell) catch @panic("mislay pile ran out of space");
+    var mislay_pile = Spell.spellArrayList(&self.mislay_pile);
+    mislay_pile.appendBounded(spell) catch @panic("mislay pile ran out of space");
+    self.mislay_pile.len = mislay_pile.items.len;
 }
 
 pub fn spawnCurrWave(self: *Room) Error!void {
     assert(self.curr_wave < self.waves.len);
-    const wave = self.waves.get(u.as(usize, self.curr_wave));
+    const wave = self.waves.buffer[u.as(usize, self.curr_wave)];
     const wave_delay_secs = @min(self.init_params.waves_params.wave_secs_per_difficulty * wave.total_difficulty, 30);
     Log.info("Spawning wave {}, next wave in {d:.1} secs", .{ self.curr_wave, wave_delay_secs });
     self.wave_timer = u.TickCounter.init(core.secsToTicks(wave_delay_secs));
-    for (wave.spawns.constSlice()) |spawn| {
+    for (wave.spawns.buffer[0..wave.spawns.len]) |spawn| {
         const spawner_proto = Thing.SpawnerController.prototype(spawn.proto.creature_kind.?);
         _ = try self.queueSpawnThing(&spawner_proto, spawn.pos);
     }
@@ -507,7 +559,7 @@ pub fn spawnRewardChest(self: *Room) void {
     const ppos = if (self.getConstPlayer()) |p| p.pos else V2f{};
     var best_spawn: ?TileMap.SpawnPos = null;
     var best_dist: f32 = std.math.inf(f32);
-    for (self.tilemap.wave_spawns.constSlice()) |this_sp| {
+    for (self.tilemap.wave_spawns.buffer[0..self.tilemap.wave_spawns.len]) |this_sp| {
         const dist = ppos.dist(this_sp.pos);
         if (dist > proto.coll_radius + 20) {
             const yes = if (best_spawn) |best_sp|
@@ -535,7 +587,7 @@ pub fn despawnRewardChest(self: *Room) void {
 
 pub fn getCurrTotalDifficulty(self: *const Room) f32 {
     var total_difficulty: f32 = 0;
-    for (self.enemies_alive.constSlice()) |e_id| {
+    for (self.enemies_alive.buffer[0..self.enemies_alive.len]) |e_id| {
         if (self.getConstThingById(e_id)) |enemy| {
             total_difficulty += enemy.enemy_difficulty;
         } else {
@@ -584,7 +636,7 @@ pub fn update(self: *Room) Error!void {
             }
         }
     }
-    for (self.spawn_queue.constSlice()) |id| {
+    for (self.spawn_queue.buffer[0..self.spawn_queue.len]) |id| {
         const t = self.getThingById(id);
         assert(t != null);
         const thing = t.?;
@@ -629,7 +681,7 @@ pub fn update(self: *Room) Error!void {
                     }
                 },
                 .won => {
-                    for (self.exits.slice()) |*exit| {
+                    for (self.exits.buffer[0..self.exits.len]) |*exit| {
                         if (try exit.updateSelected(self)) {
                             self.progress_state = .{ .exited = exit.* };
                         }
@@ -679,7 +731,7 @@ pub fn update(self: *Room) Error!void {
         self.despawnRewardChest();
     }
 
-    for (self.free_queue.constSlice()) |id| {
+    for (self.free_queue.buffer[0..self.free_queue.len]) |id| {
         const t = self.getThingById(id);
         assert(t != null);
         const thing = t.?;
@@ -692,7 +744,9 @@ pub fn update(self: *Room) Error!void {
         while (i < self.enemies_alive.len) {
             const id = self.enemies_alive.buffer[i];
             if (self.getThingById(id) == null) {
-                _ = self.enemies_alive.swapRemove(i);
+                var enemies_alive = boundedList(Thing.Id, &self.enemies_alive);
+                _ = enemies_alive.swapRemove(i);
+                self.enemies_alive.len = enemies_alive.items.len;
                 continue;
             }
             i += 1;
@@ -701,7 +755,9 @@ pub fn update(self: *Room) Error!void {
         while (i < self.bosses.len) {
             const id = self.bosses.buffer[i];
             if (self.getThingById(id) == null) {
-                _ = self.bosses.swapRemove(i);
+                var bosses = boundedList(Thing.Id, &self.bosses);
+                _ = bosses.swapRemove(i);
+                self.bosses.len = bosses.items.len;
                 continue;
             }
             i += 1;
@@ -731,7 +787,7 @@ pub fn render(self: *const Room, ui_render_texture: Platform.RenderTexture2D, ga
     try self.tilemap.renderUnderObjects();
 
     // exit
-    for (self.exits.constSlice()) |exit| {
+    for (self.exits.buffer[0..self.exits.len]) |exit| {
         try exit.renderUnder(self);
     }
 
@@ -741,8 +797,8 @@ pub fn render(self: *const Room, ui_render_texture: Platform.RenderTexture2D, ga
 
     // waves
     if (debug.show_waves) {
-        for (self.waves.constSlice(), 0..) |wave, i| {
-            for (wave.spawns.constSlice()) |spawn| {
+        for (self.waves.buffer[0..self.waves.len], 0..) |wave, i| {
+            for (wave.spawns.buffer[0..wave.spawns.len]) |spawn| {
                 try plat.textf(spawn.pos, "{}", .{i}, .{ .center = true, .color = .magenta });
             }
         }
@@ -756,7 +812,8 @@ pub fn render(self: *const Room, ui_render_texture: Platform.RenderTexture2D, ga
     }
 
     {
-        var thing_arr = std.BoundedArray(*const Thing, @TypeOf(self.things).max_len){};
+        var thing_arr_buf: [@TypeOf(self.things).max_len]*const Thing = undefined;
+        var thing_arr = std.ArrayList(*const Thing).initBuffer(thing_arr_buf[0..]);
         const player = self.getConstPlayer();
         for (&self.things.items) |*thing| {
             if (!thing.isActive()) continue;
@@ -770,7 +827,7 @@ pub fn render(self: *const Room, ui_render_texture: Platform.RenderTexture2D, ga
                     continue;
                 }
             }
-            thing_arr.append(thing) catch unreachable;
+            thing_arr.appendBounded(thing) catch unreachable;
         }
 
         const SortStruct = struct {
@@ -778,11 +835,11 @@ pub fn render(self: *const Room, ui_render_texture: Platform.RenderTexture2D, ga
                 return lhs.pos.y < rhs.pos.y;
             }
         };
-        std.sort.pdq(*const Thing, thing_arr.slice(), {}, SortStruct.lessThan);
-        for (thing_arr.constSlice()) |thing| {
+        std.sort.pdq(*const Thing, thing_arr.items, {}, SortStruct.lessThan);
+        for (thing_arr.items) |thing| {
             try thing.renderUnder(self);
         }
-        for (thing_arr.constSlice()) |thing| {
+        for (thing_arr.items) |thing| {
             if (thing.player_input != null) {
                 try thing.render(self);
             } else {
@@ -790,8 +847,8 @@ pub fn render(self: *const Room, ui_render_texture: Platform.RenderTexture2D, ga
             }
         }
 
-        try self.tilemap.renderOverObjects(self.camera, thing_arr.constSlice());
-        for (thing_arr.constSlice()) |thing| {
+        try self.tilemap.renderOverObjects(self.camera, thing_arr.items);
+        for (thing_arr.items) |thing| {
             try thing.renderOver(self);
         }
     }
