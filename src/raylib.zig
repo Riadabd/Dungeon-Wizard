@@ -244,7 +244,7 @@ pub fn findUserDataPath(self: *Platform) Error!void {
                 const first_string = CF.CFArrayGetValueAtIndex(result, 0);
                 // NOTE this leaks the string. we don't care.
                 if (CF.CFStringGetCString(@ptrCast(first_string), c_buf, u.as(c_long, self.str_fmt_buf.len), CF.kCFStringEncodingUTF8) == 0) {
-                    return Error.OutOfMemory;
+                    return Error.EncodingFail;
                 }
                 var len: usize = 0;
                 while (len < self.str_fmt_buf.len and self.str_fmt_buf[len] != 0) {
@@ -263,41 +263,62 @@ pub fn findUserDataPath(self: *Platform) Error!void {
         }
     }
     var cwd: std.fs.Dir = std.fs.cwd(); // can't close this
-    cwd.makePath(self.user_data_path) catch return Error.FileSystemFail;
+    cwd.makePath(self.user_data_path) catch {
+        self.user_data_path = self.cwd_path;
+        cwd.makePath(self.user_data_path) catch return Error.FileSystemFail;
+    };
     std.debug.print("user_data_path: {s}\n", .{self.user_data_path});
 }
 
+fn trySetAssetsPathFromBase(self: *Platform, base_path: []const u8) Error!?void {
+    const cwd_path = std.fs.realpathAlloc(self.heap, base_path) catch |e| switch (e) {
+        error.FileNotFound, error.NotDir => return null,
+        error.OutOfMemory => return Error.OutOfMemory,
+        else => return Error.FileSystemFail,
+    };
+    errdefer self.heap.free(cwd_path);
+
+    const assets_path = std.fmt.allocPrint(self.heap, "{s}/assets", .{cwd_path}) catch return Error.OutOfMemory;
+    errdefer self.heap.free(assets_path);
+
+    var assets_dir = std.fs.openDirAbsolute(assets_path, .{}) catch |e| switch (e) {
+        error.FileNotFound, error.NotDir => return null,
+        else => return Error.FileSystemFail,
+    };
+    assets_dir.close();
+
+    self.cwd_path = cwd_path;
+    self.assets_path = assets_path;
+}
+
 pub fn findAssetsPath(self: *Platform) Error!void {
-    var cwd_path_base: []const u8 = ".";
     if (config.is_release) {
         switch (builtin.os.tag) {
             .macos => {
-                cwd_path_base = "../Resources/";
-                // this doesn't work with app bundle, funnily enough...
-                // launch.sh script to change working directory works fine
-                if (false) {
-                    // Zig thinks these are ? but they're just C pointers I guess
-                    const bundle = CF.CFBundleGetMainBundle();
-                    const cf_url = CF.CFBundleCopyResourcesDirectoryURL(bundle);
-                    const cf_str_ref = CF.CFURLCopyFileSystemPath(cf_url, CF.kCFURLPOSIXPathStyle);
-                    const c_buf: [*c]u8 = @ptrCast(self.str_fmt_buf);
-                    if (CF.CFStringGetCString(cf_str_ref, c_buf, str_fmt_buf_size, CF.kCFStringEncodingASCII) != 0) {
-                        const slice = std.mem.span(c_buf);
-                        self.cwd_path = std.fs.realpathAlloc(self.heap, slice) catch return Error.OutOfMemory;
-                        self.assets_path = try std.fmt.allocPrint(self.heap, "{s}/assets", .{self.cwd_path});
-                        return;
-                    } else {
-                        return Error.NoSpaceLeft;
-                    }
-                    return Error.FileSystemFail;
+                // Prefer app bundle layout first, but allow launching the release
+                // binary from the repository root where ./assets exists.
+                if (try self.trySetAssetsPathFromBase("../Resources")) |_| {
+                    std.debug.print("cwd_path: {s}\n", .{self.cwd_path});
+                    return;
+                }
+
+                const exe_dir = std.fs.selfExeDirPathAlloc(self.heap) catch return Error.OutOfMemory;
+                defer self.heap.free(exe_dir);
+                const bundle_resources = std.fs.path.resolve(self.heap, &.{ exe_dir, "../Resources" }) catch return Error.OutOfMemory;
+                defer self.heap.free(bundle_resources);
+                if (try self.trySetAssetsPathFromBase(bundle_resources)) |_| {
+                    std.debug.print("cwd_path: {s}\n", .{self.cwd_path});
+                    return;
                 }
             },
             else => {},
         }
     }
-    self.cwd_path = std.fs.realpathAlloc(self.heap, cwd_path_base) catch return Error.OutOfMemory;
-    self.assets_path = try std.fmt.allocPrint(self.heap, "{s}/assets", .{self.cwd_path});
-    std.debug.print("cwd_path: {s}\n", .{self.cwd_path});
+    if (try self.trySetAssetsPathFromBase(".")) |_| {
+        std.debug.print("cwd_path: {s}\n", .{self.cwd_path});
+        return;
+    }
+    return Error.FileSystemFail;
 }
 
 pub fn setTargetFPS(_: *Platform, fps: u32) void {
