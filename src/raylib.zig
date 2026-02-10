@@ -62,10 +62,10 @@ onscreen_log_buf_lines_len: usize = 0,
 stack_base: usize = 0,
 should_exit: bool = false,
 app_dll: ?std.DynLib = null,
-appInit: *const fn (*Platform) callconv(.C) *anyopaque = undefined,
-appReload: *const fn (*anyopaque, *Platform) callconv(.C) void = undefined,
-appTick: *const fn () callconv(.C) void = undefined,
-appRender: *const fn () callconv(.C) void = undefined,
+appInit: *const fn (*Platform) callconv(.c) *anyopaque = undefined,
+appReload: *const fn (*anyopaque, *Platform) callconv(.c) void = undefined,
+appTick: *const fn () callconv(.c) void = undefined,
+appRender: *const fn () callconv(.c) void = undefined,
 heap: std.mem.Allocator = undefined,
 default_font: Font = undefined,
 
@@ -124,7 +124,7 @@ pub fn toggleBorderlessWindowed(_: *Platform) void {
     r.ToggleBorderlessWindowed();
 }
 
-fn raylibTraceLog(msg_type: c_int, text: [*c]const u8, args: stdio.va_list) callconv(.C) void {
+fn raylibTraceLog(msg_type: c_int, text: [*c]const u8, args: stdio.va_list) callconv(.c) void {
     const plat = getPlat();
     var fmt_buf: [1024]u8 = undefined;
     const len_i = stdio.vsnprintf(&fmt_buf, fmt_buf.len, text, args);
