@@ -295,6 +295,7 @@ pub const Controls = struct {
             mouse_button: core.MouseButton,
             keyboard_key: core.Key,
             pub const key_strings = blk: {
+                @setEvalBranchQuota(10_000);
                 //var buf: [8]u8 = undefined;
                 var ret = std.EnumArray(core.Key, []const u8).initDefault("<>", .{
                     .backtick = "`",
@@ -319,7 +320,7 @@ pub const Controls = struct {
                     ret.getPtr(k).* = std.fmt.comptimePrint("f{}", .{i + 1});
                 }
                 for ('a'..('z' + 1)) |char| {
-                    const k = std.meta.stringToEnum(core.Key, &.{char}).?;
+                    const k: core.Key = @enumFromInt(@intFromEnum(core.Key.a) + (char - 'a'));
                     ret.getPtr(k).* = std.fmt.comptimePrint("{c}", .{utl.as(u8, std.ascii.toUpper(char))});
                 }
                 for (core.Key.numbers, '0'..('9' + 1)) |k, char| {

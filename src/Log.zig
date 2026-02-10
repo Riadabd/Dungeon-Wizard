@@ -103,8 +103,10 @@ pub fn putBytes(self: *Log, buf: []const u8) void {
     // stderr
     std.debug.lockStdErr();
     defer std.debug.unlockStdErr();
-    const stderr = std.io.getStdErr().writer();
-    nosuspend stderr.writeAll(buf) catch {};
+    var stderr_buf: [1024]u8 = undefined;
+    var stderr = std.fs.File.stderr().writer(&stderr_buf);
+    nosuspend stderr.interface.writeAll(buf) catch {};
+    stderr.interface.flush() catch {};
 }
 
 pub fn raw(self: *Log, comptime fmt: []const u8, args: anytype) void {
@@ -170,11 +172,13 @@ pub fn stackTrace(self: *Log, start_addr: ?usize) void {
         self.err("Unable to dump stack trace: Unable to open debug info", .{});
         return;
     };
-    const stderr = self.getWriter();
-    std.debug.writeCurrentStackTrace(stderr, debug_info, .no_color, start_addr) catch {
+    var stderr_buf: [1024]u8 = undefined;
+    var stderr = std.fs.File.stderr().writer(&stderr_buf);
+    std.debug.writeCurrentStackTrace(&stderr.interface, debug_info, .no_color, start_addr) catch {
         self.err("Unable to dump stack trace", .{});
         return;
     };
+    stderr.interface.flush() catch {};
 }
 
 pub fn errorAndStackTrace(self: *Log, e: anytype) void {

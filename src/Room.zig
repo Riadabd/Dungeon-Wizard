@@ -322,7 +322,8 @@ pub fn reset(self: *Room) Error!void {
             _ = try self.queueSpawnCreatureByKind(spawn.kind, spawn.pos);
         }
     }
-    self.exits = tilemap.exits;
+    self.exits.len = tilemap.exits.len;
+    @memcpy(self.exits.buffer[0..self.exits.len], tilemap.exits.buffer[0..tilemap.exits.len]);
     if (tilemap.shop) |shop| {
         var coll_proto = @import("Shop.zig").shopColliderProto();
         const pts = [_]struct { V2f, f32 }{
@@ -452,7 +453,7 @@ pub fn drawSpell(self: *Room) ?Spell {
         return spell;
     } else {
         var draw_pile = Spell.spellArrayList(&self.draw_pile);
-        draw_pile.insertSliceBounded(0, self.discard_pile.buffer[0..self.discard_pile.len]) catch unreachable;
+        draw_pile.appendSliceBounded(self.discard_pile.buffer[0..self.discard_pile.len]) catch unreachable;
         self.draw_pile.len = draw_pile.items.len;
         self.discard_pile.len = 0;
     }

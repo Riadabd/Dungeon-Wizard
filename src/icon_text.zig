@@ -87,12 +87,10 @@ pub const Icon = enum(u8) {
     pub const codepoint_start: u21 = pua_codepoint_start;
     pub const codepoint_end: u21 = codepoint_start + std.math.maxInt(@typeInfo(Icon).@"enum".tag_type);
 
-    pub fn format(self: Icon, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) Error!void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: Icon, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         var buf: [pua_codepoint_num_utf8_bytes]u8 = undefined;
-        const s = self.toUtf8(&buf) catch return Error.EncodingFail;
-        writer.print("{s}", .{s}) catch return Error.EncodingFail;
+        const s = self.toUtf8(&buf) catch unreachable;
+        try writer.print("{s}", .{s});
     }
     pub inline fn toCodePoint(icon: Icon) u21 {
         return codepoint_start + @intFromEnum(icon);
@@ -150,12 +148,10 @@ pub const Fmt = packed struct(u8) {
     pub const codepoint_start: u21 = Icon.codepoint_end;
     pub const codepoint_end: u21 = codepoint_start + @typeInfo(Tint).@"enum".fields.len;
 
-    pub fn format(self: Fmt, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) Error!void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: Fmt, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         var buf: [pua_codepoint_num_utf8_bytes]u8 = undefined;
-        const s = self.toUtf8(&buf) catch return Error.EncodingFail;
-        writer.print("{s}", .{s}) catch return Error.EncodingFail;
+        const s = self.toUtf8(&buf) catch unreachable;
+        try writer.print("{s}", .{s});
     }
     pub inline fn toCodePoint(fmt: Fmt) u21 {
         comptime {

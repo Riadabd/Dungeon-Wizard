@@ -1088,7 +1088,7 @@ pub fn howToPlayUpdate(self: *Run) Error!void {
     curr_row_y += 30 * ui_scaling;
     const text_fmts = .{
         .{
-            \\Welcome to the Dungeon, Wizard{}{}{}!
+            \\Welcome to the Dungeon, Wizard{f}{f}{f}!
             \\
             \\As a Wizard, you have a mental "Deck" of Spells, but
             \\unfortunately your memory isn't what it used to be...
@@ -1115,8 +1115,8 @@ pub fn howToPlayUpdate(self: *Run) Error!void {
             \\Cast spells by pressing Q,W,E or R on the keyboard, then
             \\aim with the mouse and left-click.
             \\
-            \\Most spells cost some mana{} to cast, so keep an eye on
-            \\it, and pick up mana flames{} when you can.
+            \\Most spells cost some mana{f} to cast, so keep an eye on
+            \\it, and pick up mana flames{f} when you can.
             \\
             \\Items function similarly to Spells, but are one-time-use
             \\only! Use them by pressing the number keys 1-4.
@@ -1130,22 +1130,22 @@ pub fn howToPlayUpdate(self: *Run) Error!void {
             },
         },
         .{
-            \\{}Hot{} tips:
+            \\{f}Hot{f} tips:
             \\
             \\1. You can enable "quickcast" from the options, which
             \\lets you cast spells and items by just pressing the
             \\keyboard shortcut (without an additional left-click).
             \\
-            \\2. Your mana crystals{} will regenerate automatically
-            \\up to 3 mana, but if you pick up mana flames{}, you can
+            \\2. Your mana crystals{f} will regenerate automatically
+            \\up to 3 mana, but if you pick up mana flames{f}, you can
             \\hold up to 5 mana!
             \\
             \\3. Remember, you can pause at any time with spacebar!
             \\Stop and think about what to do next, or carefully aim
             \\your more dangerous spells.
             \\
-            \\4. If you feel stuck, remember you're a {}{}{}Wizard{}{}{}, baby!
-            \\What would a {}{}{}Wizard{}{}{} do?
+            \\4. If you feel stuck, remember you're a {f}{f}{f}Wizard{f}{f}{f}, baby!
+            \\What would a {f}{f}{f}Wizard{f}{f}{f} do?
             ,
             .{
                 icon_text.Icon.fire,
@@ -1431,15 +1431,15 @@ pub fn showProgressUpdate(self: *Run) Error!void {
         }
         const place = &self.places.buffer[i];
         const text: []const u8 = switch (place.room.kind) {
-            .first => u.bufPrintLocal("{}", .{icon_text.Icon.doorway}) catch "f",
-            .smol, .big => u.bufPrintLocal("{}", .{icon_text.Icon.ouchy_skull}) catch "r",
+            .first => u.bufPrintLocal("{f}", .{icon_text.Icon.doorway}) catch "f",
+            .smol, .big => u.bufPrintLocal("{f}", .{icon_text.Icon.ouchy_skull}) catch "r",
             .boss, .testu => "?",
-            .shop => u.bufPrintLocal("{}", .{icon_text.Icon.coin}) catch "s",
+            .shop => u.bufPrintLocal("{f}", .{icon_text.Icon.coin}) catch "s",
         };
         try icon_text.unqRenderIconText(scratch_buf, text, curr_pos, ui_scaling);
         curr_pos.x += place_rect_dims.x + place_spacing_x;
     }
-    const wiz_text = u.bufPrintLocal("{}{}{}", .{
+    const wiz_text = u.bufPrintLocal("{f}{f}{f}", .{
         icon_text.Fmt{ .tint = .orange },
         icon_text.Icon.wizard,
         icon_text.Fmt{ .tint = .orange },

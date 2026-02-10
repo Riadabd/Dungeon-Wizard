@@ -747,13 +747,13 @@ pub fn loadSpriteSheetFromJsonString(data: *Data, sheet_filename: []const u8, js
         const to = t.object.get("to").?.integer;
         assert(from >= 0 and from <= frames.items.len);
         assert(to >= from and to <= frames.items.len);
-        try sheet_tags.append(.{
+        try sheet_tags.append(plat.heap, .{
             .name = try @TypeOf(sheet.tags[0].name).fromSlice(name),
             .from_frame = u.as(i32, from),
             .to_frame = u.as(i32, to),
         });
     }
-    sheet.tags = try sheet_tags.toOwnedSlice();
+    sheet.tags = try sheet_tags.toOwnedSlice(plat.heap);
 
     for (frames.items) |f| {
         const dur = f.object.get("duration").?.integer;
@@ -762,13 +762,13 @@ pub fn loadSpriteSheetFromJsonString(data: *Data, sheet_filename: []const u8, js
         const y = frame.get("y").?.integer;
         const w = frame.get("w").?.integer;
         const h = frame.get("h").?.integer;
-        try sheet_frames.append(.{
+        try sheet_frames.append(plat.heap, .{
             .duration_ms = dur,
             .pos = V2i.iToV2i(i64, x, y),
             .size = V2i.iToV2i(i64, w, h),
         });
     }
-    sheet.frames = try sheet_frames.toOwnedSlice();
+    sheet.frames = try sheet_frames.toOwnedSlice(plat.heap);
 
     if (_layers) |layers| {
         for (layers.array.items) |layer| {
@@ -807,14 +807,14 @@ pub fn loadSpriteSheetFromJsonString(data: *Data, sheet_filename: []const u8, js
                                     continue;
                                 } };
                             }
-                            try sheet_meta.append(m);
+                            try sheet_meta.append(plat.heap, m);
                         }
                     }
                 }
             }
         }
     }
-    sheet.meta = try sheet_meta.toOwnedSlice();
+    sheet.meta = try sheet_meta.toOwnedSlice(plat.heap);
 
     return data.putAsset(SpriteSheet, &sheet, sheet_name);
 }
@@ -1127,7 +1127,7 @@ pub fn reloadTileMaps(self: *Data) Error!void {
         for (tilemap.tile_layers.constSlice()) |*layer| {
             if (layer.above_objects) continue;
             var tile_coord: V2i = .{};
-            for (layer.tiles.slice()) |*tile| {
+            for (layer.tiles.constSlice()) |tile| {
                 var props = blk: {
                     if (tilemap.tileIdxToTileSetRef(tile.idx)) |ref| {
                         break :blk self.tileIdxAndTileSetRefToTileProperties(ref, tile.idx);

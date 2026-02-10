@@ -483,7 +483,7 @@ pub fn fmtDesc(buf: []u8, kind: StatusEffect.Kind) Error![]u8 {
     const proto = proto_array.get(kind);
     return switch (kind) {
         .protected => try std.fmt.bufPrint(buf, "The next enemy attack or spell is blocked", .{}),
-        .frozen => try std.fmt.bufPrint(buf, "Cannot move or act. Thawed by {}Fire", .{Thing.Damage.Kind.fire}),
+        .frozen => try std.fmt.bufPrint(buf, "Cannot move or act. Thawed by {f}Fire", .{Thing.Damage.Kind.fire}),
         .blackmailed => try std.fmt.bufPrint(buf, "Fight for the blackmailer", .{}),
         .mint => try std.fmt.bufPrint(buf, "On death, drop 1 gold per stack", .{}),
         .promptitude => try std.fmt.bufPrint(buf, "Move and acts at double speed", .{}),

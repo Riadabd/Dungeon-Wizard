@@ -21,7 +21,7 @@ const getPlat = App.getPlat;
 const Thing = @import("Thing.zig");
 const Room = @import("Room.zig");
 
-fn BufList(comptime T: type, comptime N: usize) type {
+pub fn BufList(comptime T: type, comptime N: usize) type {
     return struct {
         buffer: [N]T = undefined,
         len: usize = 0,
@@ -304,8 +304,8 @@ pub fn __unused__findPathAStar(self: *const TileMap, allocator: std.mem.Allocato
     };
     const start_coord = posToTileCoord(start);
     const goal_coord = posToTileCoord(goal);
-    var path_arr = std.ArrayList(V2f).init(allocator);
-    defer path_arr.deinit();
+    var path_arr = try std.ArrayList(V2f).initCapacity(allocator, 0);
+    defer path_arr.deinit(allocator);
     var queue = std.PriorityQueue(AStar.PqEl, void, AStar.PqEl.lessThan).init(allocator, {});
     defer queue.deinit();
     var seen = std.AutoArrayHashMap(V2i, AStar.SeenEntry).init(allocator);
@@ -370,10 +370,10 @@ pub fn __unused__findPathAStar(self: *const TileMap, allocator: std.mem.Allocato
     {
         var curr = goal_coord;
         while (!curr.eql(start_coord)) {
-            try path_arr.append(tileCoordToCenterPos(curr));
+            try path_arr.append(allocator, tileCoordToCenterPos(curr));
             curr = seen.get(curr).?.prev;
         }
-        try path_arr.append(start);
+        try path_arr.append(allocator, start);
         path_arr.items[0] = goal;
     }
     std.mem.reverse(V2f, path_arr.items);
@@ -399,8 +399,8 @@ pub fn updateConnectedComponents(self: *TileMap) Error!void {
         t.path_conn_ids = PathLayer.ConnIds.initFill(null);
     }
 
-    var queue = std.ArrayList(V2i).init(plat.heap);
-    defer queue.deinit();
+    var queue = try std.ArrayList(V2i).initCapacity(plat.heap, 0);
+    defer queue.deinit(plat.heap);
     var seen = std.AutoArrayHashMap(V2i, void).init(plat.heap);
     defer seen.deinit();
 
@@ -416,7 +416,7 @@ pub fn updateConnectedComponents(self: *TileMap) Error!void {
 
             queue.clearRetainingCapacity();
             seen.clearRetainingCapacity();
-            try queue.append(tile.coord);
+            try queue.append(plat.heap, tile.coord);
             try seen.put(tile.coord, {});
 
             while (queue.items.len > 0) {
@@ -431,7 +431,7 @@ pub fn updateConnectedComponents(self: *TileMap) Error!void {
                     if (!self.tileCoordIsPathable(path_mask, next)) continue;
                     if (seen.get(next)) |_| continue;
                     try seen.put(next, {});
-                    try queue.append(next);
+                    try queue.append(plat.heap, next);
                 }
             }
             curr_id += 1;
@@ -444,15 +444,15 @@ pub fn getClosestPathablePos(self: *const TileMap, layer: PathLayer, conn_id: ?u
     const max_dim = self.getRoomRect().dims.max();
     const max_dist_away_squared = max_dim * max_dim;
     const Pair = struct { coord: V2i, pos: V2f };
-    var queue = std.ArrayList(Pair).init(plat.heap);
-    defer queue.deinit();
+    var queue = try std.ArrayList(Pair).initCapacity(plat.heap, 0);
+    defer queue.deinit(plat.heap);
     var seen = std.AutoArrayHashMap(V2i, void).init(plat.heap);
     defer seen.deinit();
     var best_dist = std.math.inf(f32);
     var best_pair: ?Pair = null;
 
     const pt_coord = posToTileCoord(point);
-    try queue.append(.{ .coord = pt_coord, .pos = point });
+    try queue.append(plat.heap, .{ .coord = pt_coord, .pos = point });
     try seen.put(pt_coord, {});
 
     while (queue.items.len > 0) {
@@ -479,7 +479,7 @@ pub fn getClosestPathablePos(self: *const TileMap, layer: PathLayer, conn_id: ?u
             if (point_to_pos.lengthSquared() > max_dist_away_squared) continue;
             const dir_from_point = point_to_pos.normalizedChecked() orelse V2f.right;
             const closest_pos = center_pos.sub(dir_from_point.scale(tile_sz_f * 0.5 - radius));
-            try queue.append(.{
+            try queue.append(plat.heap, .{
                 .coord = next_coord,
                 .pos = closest_pos,
             });
@@ -642,8 +642,8 @@ pub fn findPathThetaStar(self: *const TileMap, allocator: std.mem.Allocator, lay
         return ret;
     }
 
-    var path_arr = std.ArrayList(V2f).init(allocator);
-    defer path_arr.deinit();
+    var path_arr = try std.ArrayList(V2f).initCapacity(allocator, 0);
+    defer path_arr.deinit(allocator);
     var queue = std.PriorityQueue(ThetaStar.PqEl, void, ThetaStar.PqEl.lessThan).init(allocator, {});
     defer queue.deinit();
     var seen = std.AutoArrayHashMap(V2i, ThetaStar.SeenEntry).init(allocator);
@@ -734,10 +734,10 @@ pub fn findPathThetaStar(self: *const TileMap, allocator: std.mem.Allocator, lay
     {
         var curr = goal_coord;
         while (!curr.eql(start_coord)) {
-            try path_arr.append(tileCoordToCenterPos(curr));
+            try path_arr.append(allocator, tileCoordToCenterPos(curr));
             curr = seen.get(curr).?.prev.?;
         }
-        try path_arr.append(start);
+        try path_arr.append(allocator, start);
         path_arr.items[0] = actual_goal;
     }
     std.mem.reverse(V2f, path_arr.items);

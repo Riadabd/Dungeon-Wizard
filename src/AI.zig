@@ -363,7 +363,16 @@ pub const AIDjinn = struct {
 
         // otherwise fleee!
         if (can_tp) {
-            if (getFleePos(room, self.pos, self.pos, 50, 300, self.pathing_layer)) |maybe_pos| {
+            if (getFleePos(
+                room,
+                self.pos,
+                self.pos,
+                50,
+                300,
+                self.pathing_layer,
+                controller.hiding_places_buf[0..],
+                &controller.hiding_places_len,
+            )) |maybe_pos| {
                 if (maybe_pos) |flee_pos| {
                     return .{ .action = .{
                         .slot = .spell_cast_teleport_self,
@@ -755,7 +764,7 @@ pub fn getFleePos(
     const to_enemy = flee_from_pos.sub(fleer_pos);
     var best_score: f32 = -std.math.inf(f32);
     var best_pos: ?V2f = null;
-    for (hiding_places.constSlice()) |h| {
+    for (hiding_places) |h| {
         const self_to_pos = h.pos.sub(fleer_pos).normalizedOrZero();
         const len = @max(to_enemy.length() - min_dist, 0);
         const to_enemy_n = to_enemy.setLengthOrZero(len);

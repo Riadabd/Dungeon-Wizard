@@ -150,7 +150,7 @@ pub fn render(cmd_buf: *const CmdBuf) Error!void {
         }
     };
     std.sort.block(Command, @constCast(cmd_buf).slice(), {}, SortZ.lessThanFn);
-    for (cmd_buf.slice()) |*command| {
+    for (@constCast(cmd_buf).slice()) |*command| {
         switch (command.*) {
             inline else => |*c| {
                 const C = @TypeOf(c.*);

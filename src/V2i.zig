@@ -82,6 +82,10 @@ pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptio
     try writer.print(vec_fmt, .{ self.x, self.y });
 }
 
+pub fn formatNumber(self: Self, writer: *std.Io.Writer, _: std.fmt.Number) !void {
+    try writer.print("({d}, {d})", .{ self.x, self.y });
+}
+
 pub const Error = error{
     ParseFail,
 };

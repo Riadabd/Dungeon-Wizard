@@ -182,7 +182,7 @@ pub fn init(title: []const u8) Error!*Platform {
     if (builtin.os.tag != .linux) {
         r.SetTraceLogCallback(raylibTraceLog);
     }
-    const title_z = try std.fmt.allocPrintZ(ret.heap, "{s}", .{title});
+    const title_z = try std.fmt.allocPrintSentinel(ret.heap, "{s}", .{title}, 0);
     r.SetConfigFlags(r.FLAG_WINDOW_RESIZABLE);
 
     // v2i(1352, 878)

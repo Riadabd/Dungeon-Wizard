@@ -42,6 +42,53 @@ fn BufList(comptime T: type, comptime N: usize) type {
     return struct {
         buffer: [N]T = undefined,
         len: usize = 0,
+
+        const Self = @This();
+
+        fn asList(self: *Self) std.ArrayList(T) {
+            var list = std.ArrayList(T).initBuffer(self.buffer[0..]);
+            list.items.len = self.len;
+            return list;
+        }
+
+        pub fn clear(self: *Self) void {
+            self.len = 0;
+        }
+
+        pub fn append(self: *Self, item: T) error{Overflow}!void {
+            var list = self.asList();
+            list.appendBounded(item) catch return error.Overflow;
+            self.len = list.items.len;
+        }
+
+        pub fn appendAssumeCapacity(self: *Self, item: T) void {
+            var list = self.asList();
+            list.appendAssumeCapacity(item);
+            self.len = list.items.len;
+        }
+
+        pub fn orderedRemove(self: *Self, idx: usize) T {
+            var list = self.asList();
+            const ret = list.orderedRemove(idx);
+            self.len = list.items.len;
+            return ret;
+        }
+
+        pub fn get(self: *const Self, idx: usize) T {
+            return self.buffer[idx];
+        }
+
+        pub fn getPtr(self: *Self, idx: usize) *T {
+            return &self.buffer[idx];
+        }
+
+        pub fn slice(self: *Self) []T {
+            return self.buffer[0..self.len];
+        }
+
+        pub fn constSlice(self: *const Self) []const T {
+            return self.buffer[0..self.len];
+        }
     };
 }
 
@@ -147,7 +194,7 @@ last_coll: ?Collision = null,
 //
 vision_range: f32 = 0,
 dbg: struct {
-    coords_searched: BufList(V2i, 128) = .{},
+    coords_searched: TileMap.BufList(V2i, 128) = .{},
     hitbox_active_timer: utl.TickCounter = utl.TickCounter.initStopped(60),
 } = .{},
 player_input: ?player.Input = null,
@@ -180,7 +227,7 @@ on_die: union(enum) {
         }
     },
 } = .default,
-path: BufList(V2f, 32) = .{},
+path: TileMap.BufList(V2f, 32) = .{},
 pathing_layer: TileMap.PathLayer = .normal,
 hitbox: ?HitBox = null,
 hurtbox: ?HurtBox = null,
@@ -504,23 +551,8 @@ pub const Damage = struct {
                 else => try std.fmt.bufPrint(buf, "It hurts", .{}),
             };
         }
-        pub const FmtOpts = packed struct(usize) {
-            aoe: bool = false,
-            name_string: bool = false,
-            _: utl.PaddingBits(usize, 2) = 0,
-        };
-        pub fn format(self: Damage.Kind, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) Error!void {
-            _ = fmt;
-            var opts: Damage.Kind.FmtOpts = .{};
-            if (options.precision) |p| {
-                opts = @bitCast(p);
-            }
-            const icon = self.getIcon(opts.aoe);
-            if (opts.name_string) {
-                writer.print("{any}{s}", .{ icon, self.getName() }) catch return Error.EncodingFail;
-            } else {
-                writer.print("{any}", .{icon}) catch return Error.EncodingFail;
-            }
+        pub fn format(self: Damage.Kind, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+            try writer.print("{any}", .{self.getIcon(false)});
         }
     };
     kind: Damage.Kind,
