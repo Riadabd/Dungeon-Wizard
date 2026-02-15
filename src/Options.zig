@@ -1094,7 +1094,12 @@ pub fn setCustomResolution(options: *Options, res: V2i) void {
 
 pub fn alwaysUpdate(options: *Options) void {
     const plat = App.getPlat();
-    const curr_screen_dims = plat.getWindowSize();
+    var curr_screen_dims = plat.getWindowSize();
+    const monitor_dims = plat.getMonitorIdxAndDims().dims;
+    // On some macOS startup paths, the window size can briefly be reported in framebuffer pixels.
+    // Clamp to monitor bounds so we keep logical window-space dimensions for layout/input.
+    curr_screen_dims.x = @min(curr_screen_dims.x, monitor_dims.x);
+    curr_screen_dims.y = @min(curr_screen_dims.y, monitor_dims.y);
     if (!plat.screen_dims.eql(curr_screen_dims)) {
         // manually resized
         updateScreenDims(plat, curr_screen_dims, false);

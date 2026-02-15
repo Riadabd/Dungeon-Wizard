@@ -18,5 +18,7 @@
   <string>dwzd</string>
   <key>CFBundleExecutable</key>
   <string>launch.sh</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
 </dict>
 </plist>

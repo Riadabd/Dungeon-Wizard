@@ -183,7 +183,11 @@ pub fn init(title: []const u8) Error!*Platform {
         r.SetTraceLogCallback(raylibTraceLog);
     }
     const title_z = try std.fmt.allocPrintSentinel(ret.heap, "{s}", .{title}, 0);
-    r.SetConfigFlags(r.FLAG_WINDOW_RESIZABLE);
+    if (builtin.os.tag == .macos) {
+        r.SetConfigFlags(r.FLAG_WINDOW_RESIZABLE | r.FLAG_WINDOW_HIGHDPI);
+    } else {
+        r.SetConfigFlags(r.FLAG_WINDOW_RESIZABLE);
+    }
 
     // v2i(1352, 878)
     // core.min_resolution.scale(1); //.add(v2i(32, 32));

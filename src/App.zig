@@ -453,6 +453,7 @@ fn pauseMenuUpdate(self: *App) Error!void {
 }
 
 fn update(self: *App) Error!void {
+    self.options.alwaysUpdate();
     self.menu_ui.commands.clear();
     self.tooltip_ui.commands.clear();
 
@@ -491,7 +492,6 @@ fn update(self: *App) Error!void {
             },
         }
     }
-    self.options.alwaysUpdate();
     self.sfx_player.update();
     self.music_player.update(&self.sfx_player);
     self.curr_tick += 1;
