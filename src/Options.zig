@@ -1017,11 +1017,28 @@ pub const full_panel_padding = v2f(20, 20);
 pub const top_bot_parts_height = 30;
 pub const full_panel_dims = kind_rect_dims.add(v2f(0, top_bot_parts_height * 2)).add(full_panel_padding.scale(2));
 
+fn closeMenuInputJustPressed(self: *Options, plat: *Platform) bool {
+    const maybe_binding = self.controls.getBindingByCommand(.pause_menu);
+    if (maybe_binding) |binding| {
+        for (binding.inputs.constSlice()) |input| {
+            switch (input) {
+                .keyboard_key => |key| if (plat.input_buffer.keyIsJustPressed(key)) return true,
+                .mouse_button => |btn| if (plat.input_buffer.mouseBtnIsJustPressed(btn)) return true,
+            }
+        }
+    }
+    return false;
+}
+
 pub fn update(self: *Options, cmd_buf: *ImmUI.CmdBuf) Error!enum { dont_close, close } {
     const plat = App.getPlat();
     const data = App.getData();
     const font = data.fonts.get(.pixeloid);
     const ui_scaling = plat.ui_scaling;
+
+    if (self.closeMenuInputJustPressed(plat)) {
+        return .close;
+    }
 
     const panel_dims = full_panel_dims.scale(ui_scaling);
     const kind_section_dims = kind_rect_dims.scale(ui_scaling);
